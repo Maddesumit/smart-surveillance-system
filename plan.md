@@ -36,7 +36,7 @@ This document outlines a step-by-step approach to building a real-time smart sur
 ## Phase 3: Object Detection Implementation
 
 1. **Model Integration**
-   - Set up YOLOv5 or TensorFlow model
+   - Set up YOLOv5 model
    - Implement pre-trained model loading
    - Configure detection thresholds and parameters
    - Create object detection wrapper class

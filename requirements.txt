@@ -1,0 +1,25 @@
+# Core libraries
+opencv-python>=4.5.0  # For video processing
+numpy>=1.20.0         # For numerical operations
+pandas>=1.3.0         # For data manipulation
+
+# Deep learning frameworks
+tensorflow>=2.8.0     # Deep learning framework
+torch>=1.10.0         # Alternative deep learning framework
+torchvision>=0.11.0   # Computer vision utilities for PyTorch
+
+# Object detection
+ultralytics>=8.0.0    # For YOLOv5 implementation
+
+# Web dashboard
+flask>=2.0.0          # Web framework
+flask-login>=0.5.0    # User authentication for Flask
+flask-socketio>=5.0.0 # Real-time communication for Flask
+
+# Alert system
+twilio>=7.0.0         # For SMS alerts
+
+# Utilities
+pillow>=8.0.0         # Image processing
+matplotlib>=3.4.0     # For visualization
+python-dotenv>=0.19.0 # For environment variables

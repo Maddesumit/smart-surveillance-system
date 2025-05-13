@@ -19,6 +19,7 @@ from src.video_processing.video_stream import VideoStream
 from src.object_detection.detector import ObjectDetector
 from src.object_detection.tracker import ObjectTracker
 from src.anomaly_detection.analyzer import AnomalyDetector
+from src.alert_system.notifier import AlertSystem
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,

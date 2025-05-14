@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script>
+    // Function to fetch and display alerts
+    function updateAlerts() {
+        fetch('/alerts')
+            .then(response => response.json())
+            .then(data => {
+                const alertsContainer = document.getElementById('alerts-list');
+                alertsContainer.innerHTML = '';
+                
+                if (data.length === 0) {
+                    alertsContainer.innerHTML = '<p>No alerts detected.</p>';
+                    return;
+                }
+                
+                // Display the most recent 10 alerts
+                const recentAlerts = data.slice(-10).reverse();
+                recentAlerts.forEach(alert => {
+                    const alertElement = document.createElement('div');
+                    alertElement.className = 'alert-item';
+                    alertElement.innerHTML = `
+                        <strong>${alert.type}</strong> - ${alert.timestamp}<br>
+                        ${alert.message}
+                    `;
+                    alertsContainer.appendChild(alertElement);
+                });
+            })
+            .catch(error => console.error('Error fetching alerts:', error));
+    }
+    
+    // Update alerts every 5 seconds
+    document.addEventListener('DOMContentLoaded', function() {
+        updateAlerts();
+        setInterval(updateAlerts, 5000);
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+<h2>Live Surveillance</h2>
+
+<div class="video-container">
+    <img src="{{ url_for('main.video_feed') }}" class="video-feed" alt="Live Video Feed">
+</div>
+
+<div class="alerts-container">
+    <h3>Recent Alerts</h3>
+    <div id="alerts-list">
+        <p>Loading alerts...</p>
+    </div>
+</div>
+{% endblock %}

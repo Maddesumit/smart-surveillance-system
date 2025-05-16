@@ -4,6 +4,9 @@
 A real-time surveillance system leveraging computer vision and deep learning to detect and respond to suspicious activities.
 
 ---
+## 🏗️ System Architecture
+
+![Smart Surveillance System Architecture](./screenshots/architecture.png)
 
 ## 🚀 Features
 
@@ -30,6 +33,19 @@ A real-time surveillance system leveraging computer vision and deep learning to 
 
 - **📝 Logging System**  
   Maintains logs of all system activity and alert history.
+
+---
+
+## 📸 System Screenshots
+
+### Dashboard Overview
+![Dashboard Overview](./screenshots/output_1.jpg)
+
+### Alert Detection
+![Alert Detection](./screenshots/output_2.jpg)
+
+### System Monitoring
+![System Monitoring](./screenshots/output_3.jpg)
 
 ---
 

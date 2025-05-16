@@ -44,9 +44,3 @@ logs/*
 *.h5
 *.pb
 
-# Media files
-*.mp4
-*.avi
-*.jpg
-*.jpeg
-*.png

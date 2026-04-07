@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ feature.title }} | Smart Surveillance System</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Prism.js for code highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --accent-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --dark-bg: #0a0a1a;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            line-height: 1.7;
+        }
+
+        /* Navigation */
+        .navbar-custom {
+            background: rgba(10, 10, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 15px 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .navbar-brand {
+            font-weight: 800;
+            font-size: 1.3rem;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-link {
+            color: var(--text-secondary) !important;
+            font-weight: 500;
+            margin: 0 10px;
+            transition: color 0.3s;
+        }
+
+        .nav-link:hover {
+            color: var(--text-primary) !important;
+        }
+
+        .btn-back {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .btn-back:hover {
+            background: var(--primary-gradient);
+            border-color: transparent;
+            color: white;
+        }
+
+        /* Hero Header */
+        .feature-hero {
+            padding: 150px 0 80px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .feature-icon-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            margin-bottom: 25px;
+            color: white;
+        }
+
+        .feature-title {
+            font-size: 3rem;
+            font-weight: 900;
+            margin-bottom: 15px;
+        }
+
+        .feature-subtitle {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 800px;
+        }
+
+        .feature-tags {
+            margin-top: 25px;
+        }
+
+        .feature-tag {
+            display: inline-block;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        /* Content Sections */
+        .content-section {
+            padding: 80px 0;
+        }
+
+        .content-section:nth-child(even) {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .section-title {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .section-title i {
+            color: #667eea;
+        }
+
+        /* Info Card */
+        .info-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 30px;
+            height: 100%;
+            transition: all 0.3s;
+        }
+
+        .info-card:hover {
+            border-color: rgba(102, 126, 234, 0.3);
+            transform: translateY(-5px);
+        }
+
+        .info-card h5 {
+            font-weight: 700;
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+
+        .info-card ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-card li {
+            padding: 8px 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            color: var(--text-secondary);
+        }
+
+        .info-card li i {
+            color: #00d9a5;
+            margin-top: 4px;
+        }
+
+        /* Algorithm Section */
+        .algorithm-step {
+            display: flex;
+            gap: 25px;
+            margin-bottom: 40px;
+            padding-bottom: 40px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .algorithm-step:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .step-number {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: var(--primary-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .step-content h4 {
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .step-content p {
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+
+        /* Code Block */
+        .code-block {
+            background: #1e1e2e;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border: 1px solid var(--glass-border);
+        }
+
+        .code-block pre {
+            margin: 0;
+            color: #e0e0e0;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+        }
+
+        /* Performance Metrics */
+        .metric-card {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        /* Tech Stack */
+        .tech-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: var(--glass-bg);
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .tech-icon {
+            font-size: 2rem;
+        }
+
+        .tech-name {
+            font-weight: 600;
+        }
+
+        .tech-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Diagram */
+        .diagram-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 30px;
+        }
+
+        .diagram-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 30px 0;
+        }
+
+        .diagram-box {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 15px 25px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .diagram-arrow {
+            font-size: 1.5rem;
+            color: #667eea;
+        }
+
+        /* Footer Navigation */
+        .feature-nav {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 40px 0;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .nav-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .nav-card:hover {
+            background: var(--primary-gradient);
+            border-color: transparent;
+            transform: translateX(5px);
+            color: white;
+        }
+
+        .nav-icon {
+            font-size: 1.5rem;
+        }
+
+        .nav-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .nav-title {
+            font-weight: 600;
+        }
+
+        /* Footer */
+        .footer {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 30px 0;
+            text-align: center;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .feature-title {
+                font-size: 2rem;
+            }
+
+            .algorithm-step {
+                flex-direction: column;
+            }
+
+            .diagram-flow {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-custom">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-shield-alt me-2"></i>Smart Surveillance
+            </a>
+            <div class="ms-auto">
+                <a href="/" class="btn btn-back me-2">
+                    <i class="fas fa-home me-1"></i>Home
+                </a>
+                <a href="/dashboard" class="btn btn-back">
+                    <i class="fas fa-desktop me-1"></i>Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Header -->
+    <section class="feature-hero">
+        <div class="container">
+            <div class="feature-icon-large" style="background: {{ feature.gradient }};">
+                <i class="{{ feature.icon }}"></i>
+            </div>
+            <h1 class="feature-title">{{ feature.title }}</h1>
+            <p class="feature-subtitle">{{ feature.description }}</p>
+            <div class="feature-tags">
+                {% for tag in feature.tags %}
+                <span class="feature-tag">{{ tag }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Overview Section -->
+    <section class="content-section">
+        <div class="container">
+            <h2 class="section-title"><i class="fas fa-info-circle"></i>Overview</h2>
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <p style="font-size: 1.1rem; color: var(--text-secondary);">
+                        {{ feature.overview }}
+                    </p>
+                </div>
+                <div class="col-lg-4">
+                    <div class="row g-3">
+                        {% for metric in feature.metrics %}
+                        <div class="col-6">
+                            <div class="metric-card">
+                                <div class="metric-value">{{ metric.value }}</div>
+                                <div class="metric-label">{{ metric.label }}</div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="content-section">
+        <div class="container">
+            <h2 class="section-title"><i class="fas fa-cogs"></i>How It Works</h2>
+
+            <!-- Flow Diagram -->
+            <div class="diagram-card mb-5">
+                <h5 class="text-center mb-4">Processing Pipeline</h5>
+                <div class="diagram-flow">
+                    {% for step in feature.pipeline %}
+                    <div class="diagram-box">
+                        <i class="{{ step.icon }} mb-2" style="color: #667eea;"></i>
+                        <div>{{ step.name }}</div>
+                    </div>
+                    {% if not loop.last %}
+                    <div class="diagram-arrow"><i class="fas fa-arrow-right"></i></div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Algorithm Steps -->
+            {% for step in feature.algorithm_steps %}
+            <div class="algorithm-step">
+                <div class="step-number">{{ loop.index }}</div>
+                <div class="step-content">
+                    <h4>{{ step.title }}</h4>
+                    <p>{{ step.description }}</p>
+                    {% if step.details %}
+                    <ul class="mt-3">
+                        {% for detail in step.details %}
+                        <li style="color: var(--text-secondary);"><i class="fas fa-check text-success me-2"></i>{{
+                            detail }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Technical Details -->
+    <section class="content-section">
+        <div class="container">
+            <h2 class="section-title"><i class="fas fa-microchip"></i>Technical Details</h2>
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="info-card">
+                        <h5><i class="fas fa-code me-2"></i>Algorithm & Model</h5>
+                        <ul>
+                            {% for item in feature.algorithm_details %}
+                            <li><i class="fas fa-check"></i>{{ item }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="info-card">
+                        <h5><i class="fas fa-sliders-h me-2"></i>Configuration</h5>
+                        <ul>
+                            {% for item in feature.config_details %}
+                            <li><i class="fas fa-cog"></i>{{ item }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Code Example -->
+            {% if feature.code_example %}
+            <div class="mt-5">
+                <h4 class="mb-3"><i class="fas fa-terminal me-2"></i>Code Implementation</h4>
+                <div class="code-block">
+                    <pre><code>{{ feature.code_example }}</code></pre>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Technology Stack -->
+    <section class="content-section">
+        <div class="container">
+            <h2 class="section-title"><i class="fas fa-layer-group"></i>Technology Stack</h2>
+            <div class="row g-4">
+                {% for tech in feature.tech_stack %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="tech-item">
+                        <span class="tech-icon">{{ tech.icon }}</span>
+                        <div>
+                            <div class="tech-name">{{ tech.name }}</div>
+                            <div class="tech-desc">{{ tech.description }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Use Cases -->
+    <section class="content-section">
+        <div class="container">
+            <h2 class="section-title"><i class="fas fa-lightbulb"></i>Use Cases</h2>
+            <div class="row g-4">
+                {% for usecase in feature.use_cases %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="info-card">
+                        <h5><i class="{{ usecase.icon }} me-2"></i>{{ usecase.title }}</h5>
+                        <p style="color: var(--text-secondary);">{{ usecase.description }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Navigation to Other Features -->
+    <section class="feature-nav">
+        <div class="container">
+            <h4 class="text-center mb-4">Explore Other Features</h4>
+            <div class="row g-3">
+                {% for nav in feature.related_features %}
+                <div class="col-md-4">
+                    <a href="/features/{{ nav.slug }}" class="nav-card">
+                        <i class="{{ nav.icon }} nav-icon"></i>
+                        <div>
+                            <div class="nav-label">Feature</div>
+                            <div class="nav-title">{{ nav.title }}</div>
+                        </div>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p class="mb-0 text-secondary">© 2025-26 Smart Surveillance System | Final Year Project</p>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

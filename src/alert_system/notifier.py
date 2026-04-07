@@ -43,6 +43,9 @@ class AlertSystem:
         self.alert_templates = {
             'unattended_object': "ALERT: Unattended {object_type} detected at location ({x}, {y}) for {duration} seconds",
             'restricted_area_violation': "ALERT: {object_type} entered restricted area {area_id} at location ({x}, {y})",
+            'person_detected': "ALERT: {message}",
+            'crowd_detected': "ALERT: {message}",
+            'unknown_face_detected': "ALERT: Unknown face detected at location ({x}, {y})",
             'general': "ALERT: {message}"
         }
         

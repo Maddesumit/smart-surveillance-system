@@ -1,14 +1,24 @@
 import cv2
 import numpy as np
 import logging
-import torch # Add this import
+import torch
+import os
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Try to import enhanced detector
+try:
+    from .enhanced_detector import EnhancedObjectDetector
+    ENHANCED_AVAILABLE = True
+except ImportError:
+    ENHANCED_AVAILABLE = False
+    logger.warning("Enhanced detector not available, using basic detector")
+
 class ObjectDetector:
-    def __init__(self, model_size='s', confidence_threshold=0.25):
+    def __init__(self, model_size='s', confidence_threshold=0.25, use_enhanced=True):
         """
         Initialize the ObjectDetector.
 
@@ -16,29 +26,48 @@ class ObjectDetector:
             model_size (str): Size of the model to use (e.g., 's', 'm', 'l' for YOLO).
                                 Corresponds to YOLOv8 model sizes (n, s, m, l, x).
             confidence_threshold (float): Minimum confidence score for a detection.
+            use_enhanced (bool): Use enhanced detector if available.
         """
         self.model_size = model_size
         self.confidence_threshold = confidence_threshold
-        # Load YOLO model
+        self.use_enhanced = use_enhanced and ENHANCED_AVAILABLE
+        
+        if self.use_enhanced:
+            # Use enhanced detector
+            logger.info("Using Enhanced Object Detector")
+            model_path = f'yolov8{model_size}.pt'
+            
+            # Check for custom models
+            custom_models_dir = Path('models/custom')
+            if custom_models_dir.exists():
+                custom_models = list(custom_models_dir.glob('*.pt'))
+                if custom_models:
+                    # Use the most recent custom model
+                    latest_model = max(custom_models, key=os.path.getctime)
+                    logger.info(f"Found custom model: {latest_model}")
+                    model_path = str(latest_model)
+            
+            self.detector = EnhancedObjectDetector(
+                model_path=model_path,
+                confidence_threshold=confidence_threshold,
+                surveillance_mode=True
+            )
+        else:
+            # Use basic detector
+            logger.info("Using Basic Object Detector")
+            self._init_basic_detector()
+    
+    def _init_basic_detector(self):
+        """Initialize basic YOLO detector."""
         try:
             from ultralytics import YOLO
-            # Corrected model name: e.g., 'yolov8s.pt', 'yolov8m.pt'
-            # The ultralytics library will download these if not found locally.
-            model_name = f'yolov8{model_size}.pt' 
+            model_name = f'yolov8{self.model_size}.pt' 
             self.model = YOLO(model_name)
-            
-            # Setting confidence threshold on the model directly might not be available
-            # or might be done differently in YOLOv8. It's often applied during inference or post-processing.
-            # For now, we'll rely on filtering by confidence_threshold in the detect method.
-            # If self.model.conf exists and is settable, this would be: self.model.conf = confidence_threshold
             logger.info(f"{model_name} model loaded successfully (or will be downloaded).")
         except Exception as e:
             logger.error(f"Error loading YOLO model ({model_name}): {e}")
             self.model = None 
             raise
-        # logger.info(f"ObjectDetector initialized with model_size='{model_size}' and confidence_threshold={confidence_threshold}")
-        # Placeholder: Replace with actual model loading
-        # self.model = None # Remove this line as model is loaded above
 
     def detect(self, frame):
         """
@@ -52,20 +81,24 @@ class ObjectDetector:
                   like 'bbox' (bounding box [x1, y1, x2, y2]), 'class_id', 'class_name',
                   and 'confidence'.
         """
+        if self.use_enhanced:
+            return self.detector.detect(frame)
+        else:
+            return self._basic_detect(frame)
+    
+    def _basic_detect(self, frame):
+        """Basic detection using original implementation."""
         if self.model is None:
             logger.warning("Object detection model not loaded or failed to load. Returning empty detections.")
             return []
 
         results = self.model(frame)
-        # logger.debug(f"Raw model results: {results}") # Uncomment for very verbose output
         
         detections = []
         for result in results:
             boxes = result.boxes
             names = result.names
-            # logger.debug(f"Processing result with {len(boxes)} potential boxes.")
             for i in range(len(boxes)):
-                # logger.debug(f"Box {i} conf: {boxes.conf[i]}, threshold: {self.confidence_threshold}")
                 if boxes.conf[i] >= self.confidence_threshold:
                     xyxy = boxes.xyxy[i].cpu().numpy()
                     detections.append({
@@ -74,7 +107,6 @@ class ObjectDetector:
                         'class_name': names[int(boxes.cls[i].cpu().numpy())],
                         'confidence': float(boxes.conf[i].cpu().numpy())
                     })
-        # logger.info(f"Returning {len(detections)} detections after filtering.")
         return detections
 
     def draw_detections(self, frame, detections):
@@ -88,6 +120,13 @@ class ObjectDetector:
         Returns:
             numpy.ndarray: The frame with detections drawn.
         """
+        if self.use_enhanced:
+            return self.detector.draw_detections(frame, detections, show_metadata=True)
+        else:
+            return self._basic_draw_detections(frame, detections)
+    
+    def _basic_draw_detections(self, frame, detections):
+        """Basic drawing using original implementation."""
         result_frame = frame.copy()
         for det in detections:
             bbox = det['bbox']
@@ -107,6 +146,44 @@ class ObjectDetector:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                         
         return result_frame
+    
+    def load_custom_model(self, model_path: str) -> bool:
+        """
+        Load a custom trained model.
+        
+        Args:
+            model_path: Path to custom model
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.use_enhanced:
+            return self.detector.load_custom_model(model_path)
+        else:
+            try:
+                from ultralytics import YOLO
+                self.model = YOLO(model_path)
+                logger.info(f"Custom model loaded: {model_path}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to load custom model: {str(e)}")
+                return False
+    
+    def get_model_info(self) -> dict:
+        """Get information about the current model."""
+        if self.use_enhanced:
+            return {
+                'type': 'enhanced',
+                'model_path': self.detector.model_path,
+                'surveillance_mode': self.detector.surveillance_mode,
+                'stats': self.detector.get_detection_stats()
+            }
+        else:
+            return {
+                'type': 'basic',
+                'model_size': self.model_size,
+                'confidence_threshold': self.confidence_threshold
+            }
 
 if __name__ == '__main__':
     logger.info("Attempting to initialize ObjectDetector for webcam test...")

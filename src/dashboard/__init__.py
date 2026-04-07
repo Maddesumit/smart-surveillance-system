@@ -1,21 +1,29 @@
-# This file marks the dashboard directory as a Python package
-# It allows us to import modules from this directory
+# Smart Surveillance Dashboard
+# Professional dashboard with advanced features integration
 
-# Import necessary modules
 from flask import Flask
+from flask_socketio import SocketIO
+import os
 
-# Create a function to initialize our Flask application
+# Global SocketIO instance for real-time communication
+socketio = SocketIO()
+
 def create_app():
-    # Create a Flask application instance
+    """Create and configure the Flask application with advanced features."""
     app = Flask(__name__)
     
-    # Configure basic settings
-    app.config['SECRET_KEY'] = 'your-secret-key-for-session'  # Used for session security
-    app.config['TEMPLATES_AUTO_RELOAD'] = True  # Auto reload templates during development
+    # Enhanced configuration
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'smart-surveillance-2025-key')
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
+    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file upload
     
-    # Import and register routes
-    from .routes import main_routes, auth_routes
+    # Initialize SocketIO for real-time updates
+    socketio.init_app(app, cors_allowed_origins="*")
+    
+    # Import and register blueprints
+    from .routes import main_routes, auth_routes, api_routes
     app.register_blueprint(main_routes.main)
     app.register_blueprint(auth_routes.auth)
+    app.register_blueprint(api_routes.api, url_prefix='/api')
     
     return app

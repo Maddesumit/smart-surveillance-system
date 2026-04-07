@@ -184,3 +184,143 @@ class VideoStream:
         if self.cap is not None and self.cap.isOpened():
             self.cap.release()
             logger.info("Released video capture resources")
+
+
+class ThreadedVideoStream(VideoStream):
+    """
+    Threaded video stream for improved performance.
+    
+    Uses a dedicated capture thread to continuously read frames
+    into a buffer, allowing the main thread to process frames
+    without waiting for camera I/O.
+    """
+    
+    def __init__(self, source: Union[int, str] = 0,
+                 width: int = 640,
+                 height: int = 480,
+                 fps_target: int = 30,
+                 buffer_size: int = 5):
+        """
+        Initialize the threaded video stream.
+        
+        Args:
+            source: Camera index or video path
+            width: Target width
+            height: Target height  
+            fps_target: Target FPS
+            buffer_size: Max frames to buffer
+        """
+        super().__init__(source, width, height, fps_target)
+        
+        self.buffer_size = buffer_size
+        self.frame_buffer = []
+        self.buffer_lock = None
+        self.capture_thread = None
+        self.running = False
+        
+        # Import threading here to avoid issues
+        import threading
+        from queue import Queue
+        
+        self.buffer_lock = threading.Lock()
+        self.frame_queue = Queue(maxsize=buffer_size)
+        
+    def start(self) -> bool:
+        """
+        Start the threaded capture.
+        
+        Returns:
+            bool: True if started successfully
+        """
+        import threading
+        
+        if self.running:
+            return True
+            
+        if not self.connect():
+            return False
+        
+        self.running = True
+        self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self.capture_thread.start()
+        
+        logger.info("Threaded video stream started")
+        return True
+    
+    def stop(self) -> None:
+        """Stop the threaded capture."""
+        self.running = False
+        
+        if self.capture_thread and self.capture_thread.is_alive():
+            self.capture_thread.join(timeout=2.0)
+        
+        self.release()
+        logger.info("Threaded video stream stopped")
+    
+    def _capture_loop(self) -> None:
+        """Background capture loop."""
+        from queue import Empty
+        
+        while self.running:
+            try:
+                if self.cap is None or not self.cap.isOpened():
+                    time.sleep(0.1)
+                    continue
+                
+                ret, frame = self.cap.read()
+                
+                if not ret:
+                    time.sleep(0.01)
+                    continue
+                
+                # Resize if needed
+                if frame.shape[1] != self.width or frame.shape[0] != self.height:
+                    frame = cv2.resize(frame, (self.width, self.height))
+                
+                # Update FPS
+                current_time = time.time()
+                if self.last_frame_time > 0:
+                    self.fps = 1.0 / max(current_time - self.last_frame_time, 0.001)
+                self.last_frame_time = current_time
+                self.frame_count += 1
+                
+                # Add to queue (drop oldest if full)
+                try:
+                    if self.frame_queue.full():
+                        try:
+                            self.frame_queue.get_nowait()
+                        except:
+                            pass
+                    self.frame_queue.put_nowait(frame)
+                except:
+                    pass
+                
+                # Maintain target FPS
+                target_interval = 1.0 / self.fps_target
+                elapsed = time.time() - current_time
+                if elapsed < target_interval:
+                    time.sleep(target_interval - elapsed)
+                    
+            except Exception as e:
+                logger.error(f"Capture loop error: {e}")
+                time.sleep(0.1)
+    
+    def read_frame(self) -> Tuple[bool, Optional[np.ndarray]]:
+        """
+        Read a frame from the buffer (non-blocking).
+        
+        Returns:
+            Tuple of (success, frame)
+        """
+        from queue import Empty
+        
+        try:
+            frame = self.frame_queue.get(timeout=1.0)
+            return True, frame
+        except Empty:
+            # Return cached frame or test pattern
+            return super().read_frame()
+    
+    def get_buffer_size(self) -> int:
+        """Get current buffer fill level."""
+        return self.frame_queue.qsize()

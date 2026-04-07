@@ -24,6 +24,14 @@ from object_detection.tracker import ObjectTracker
 from anomaly_detection.analyzer import AnomalyDetector
 from alert_system.notifier import AlertSystem
 
+# Import advanced features
+try:
+    from advanced_features.facial_recognition import FacialRecognitionSystem
+    FACIAL_RECOGNITION_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Facial recognition not available: {e}")
+    FACIAL_RECOGNITION_AVAILABLE = False
+
 # Set up logging
 log_dir = os.path.join(os.path.dirname(__file__), 'logs')
 os.makedirs(log_dir, exist_ok=True)
@@ -118,6 +126,19 @@ def main():
         logger.info("Initializing alert system...")
         notifier = AlertSystem()
         
+        # Initialize facial recognition if available
+        face_recognition = None
+        if FACIAL_RECOGNITION_AVAILABLE:
+            logger.info("Initializing facial recognition system...")
+            try:
+                face_recognition = FacialRecognitionSystem()
+                logger.info("Facial recognition system initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize facial recognition: {str(e)}")
+                face_recognition = None
+        else:
+            logger.warning("Facial recognition not available")
+        
         # Start dashboard in a separate thread
         logger.info("Starting dashboard...")
         dashboard_thread = threading.Thread(target=start_dashboard)
@@ -144,6 +165,36 @@ def main():
             
             # Process frame for anomalies
             anomalies = analyzer.detect_anomalies(frame, tracked_objects)
+            
+            # Facial recognition processing
+            face_detections = []
+            if face_recognition:
+                try:
+                    face_detections = face_recognition.detect_faces(frame)
+                    
+                    # Log face detection results
+                    if face_detections:
+                        known_faces = [f for f in face_detections if f['is_known']]
+                        unknown_faces = [f for f in face_detections if not f['is_known']]
+                        
+                        if known_faces:
+                            logger.info(f"Detected {len(known_faces)} known faces: {[f['name'] for f in known_faces]}")
+                        if unknown_faces:
+                            logger.info(f"Detected {len(unknown_faces)} unknown faces")
+                            
+                        # Generate face-based alerts
+                        for face in unknown_faces:
+                            face_alert = {
+                                'type': 'unknown_face_detected',
+                                'message': f"Unknown face detected at location ({face['bbox'][0]}, {face['bbox'][1]})",
+                                'confidence': face['confidence'],
+                                'bbox': face['bbox'],
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            notifier.generate_alert(face_alert)
+                
+                except Exception as e:
+                    logger.error(f"Error in facial recognition processing: {str(e)}")
             
             # Generate alerts for detected anomalies
             for anomaly in anomalies:

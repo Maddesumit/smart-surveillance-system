@@ -162,6 +162,27 @@ class AnomalyDetector:
         if not centroid:
             return None
         
+        # Only trigger for certain object types or high confidence detections
+        class_name = obj.get('class_name', '')
+        confidence = obj.get('confidence', 0)
+        
+        # Filter by object type and confidence
+        if class_name == 'person':
+            # Always check for people
+            min_confidence = 0.5
+        elif class_name in ['car', 'truck', 'bus', 'motorcycle', 'bicycle']:
+            # Check for vehicles with higher confidence
+            min_confidence = 0.7
+        elif class_name in ['backpack', 'handbag', 'suitcase']:
+            # Check for suspicious objects with high confidence
+            min_confidence = 0.8
+        else:
+            # Skip other objects unless very high confidence
+            min_confidence = 0.9
+        
+        if confidence < min_confidence:
+            return None
+        
         # Check if centroid is inside any restricted area
         for area_idx, area in enumerate(self.restricted_areas):
             if cv2.pointPolygonTest(area, centroid, False) >= 0:  # Point is inside polygon

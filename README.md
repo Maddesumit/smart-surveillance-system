@@ -39,12 +39,15 @@ A real-time surveillance system leveraging computer vision and deep learning to 
 ## 📸 System Screenshots
 
 ### Dashboard Overview
+The Dashboard Overview screenshot showcases the main interface of the Smart Surveillance System. This central control panel provides real-time video feeds with object detection overlays, system status indicators, and quick access to all monitoring features. The intuitive layout allows security personnel to monitor multiple areas simultaneously while maintaining awareness of any detected anomalies.
 ![Dashboard Overview](./screenshots/output_1.jpg)
 
 ### Alert Detection
+The Alert Detection screenshot demonstrates the system's ability to identify and highlight suspicious activities in real-time. When potential security threats are detected—such as unattended objects, unauthorized access to restricted areas, or unusual movement patterns—the system immediately flags these events with visual indicators and generates detailed alerts. This screenshot shows how the system visually marks detected anomalies directly on the video feed for immediate operator attention.
 ![Alert Detection](./screenshots/output_2.jpg)
 
 ### System Monitoring
+The System Monitoring screenshot illustrates the comprehensive analytics and logging capabilities of the Smart Surveillance System. This view provides historical data on detected events, system performance metrics, and alert statistics. Security administrators can review past incidents, analyze detection patterns, and generate reports for security audits. The monitoring interface also displays system health information, ensuring all components are functioning optimally.
 ![System Monitoring](./screenshots/output_3.jpg)
 
 ---

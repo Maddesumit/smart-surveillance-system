@@ -10,5 +10,5 @@ app = create_app()
 if __name__ == '__main__':
     # Get port from environment variable or use 8080 as default (changed from 5000)
     port = int(os.environ.get('PORT', 8080))
-    # Run the application in debug mode (remove debug=True in production)
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Run the application on localhost for camera access compatibility (debug mode for development)
+    app.run(host='127.0.0.1', port=port, debug=True)

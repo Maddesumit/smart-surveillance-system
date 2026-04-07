@@ -9,7 +9,14 @@ torch>=1.10.0         # Alternative deep learning framework
 torchvision>=0.11.0   # Computer vision utilities for PyTorch
 
 # Object detection
-ultralytics>=8.0.0    # For YOLOv5 implementation
+ultralytics>=8.0.0    # For YOLOv8 implementation
+
+# Model training and evaluation
+scikit-learn>=1.0.0   # For evaluation metrics
+matplotlib>=3.4.0     # For visualization
+seaborn>=0.11.0       # Enhanced plotting
+Pillow>=8.0.0         # Image processing
+scipy>=1.7.0          # Scientific computing
 
 # Web dashboard
 flask>=2.0.0          # Web framework
@@ -20,6 +27,6 @@ flask-socketio>=5.0.0 # Real-time communication for Flask
 twilio>=7.0.0         # For SMS alerts
 
 # Utilities
-pillow>=8.0.0         # Image processing
-matplotlib>=3.4.0     # For visualization
 python-dotenv>=0.19.0 # For environment variables
+pyyaml>=6.0           # For configuration files
+tqdm>=4.60.0          # Progress bars

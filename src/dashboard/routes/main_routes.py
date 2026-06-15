@@ -44,6 +44,13 @@ try:
     from advanced_features.multi_camera_sync import MultiCameraManager
     from advanced_features.real_time_analytics import AnalyticsEngine
     from advanced_features.advanced_alerts import AdvancedAlertSystem
+    from advanced_features.weapon_detection import WeaponDetector
+    from advanced_features.violence_detection import ViolenceDetector
+    from advanced_features.ppe_detection import PPEDetector
+    from advanced_features.fall_detection import FallDetector
+    from advanced_features.crowd_density import CrowdDensityEstimator
+    from advanced_features.loitering_detection import LoiteringDetector
+    from advanced_features.abandoned_object import AbandonedObjectDetector
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Advanced features not available: {e}")
@@ -67,6 +74,15 @@ multi_camera = None
 analytics = None
 advanced_alerts = None
 
+# New advanced detection features
+weapon_detector = None
+violence_detector = None
+ppe_detector = None
+fall_detector = None
+crowd_density = None
+loitering_detector = None
+abandoned_object_detector = None
+
 # Alert management
 alerts_history = []
 alert_stats = {
@@ -80,6 +96,14 @@ alert_stats = {
 # Camera management
 selected_camera_index = 0
 available_cameras = []
+
+# Live detection stats (updated by generate_frames)
+live_detection_stats = {
+    'objects_in_view': 0,
+    'faces_detected': 0,
+    'tracked_objects': 0,
+    'last_update': None
+}
 
 
 def get_alerts_db_path():
@@ -111,7 +135,7 @@ class StandardizedAlert:
     
     # Alert throttling to prevent spam
     last_alerts = {}
-    throttle_time = 10  # seconds (reduced from 30 for better responsiveness)
+    throttle_time = 10  # seconds between same alert type
     
     @classmethod
     def create_alert(cls, alert_type, message, priority=PRIORITY_MEDIUM, data=None):
@@ -303,12 +327,29 @@ def initialize_components():
             facial_recognition = FacialRecognitionSystem()
             behavior_analyzer = BehaviorAnalyzer()
             person_reid = PersonReID()
-            multi_camera = MultiCameraManager()()
+            multi_camera = MultiCameraManager()
             analytics = AnalyticsEngine()
             advanced_alerts = AdvancedAlertSystem()
             print("✅ Advanced features initialized")
         except Exception as e:
             print(f"⚠️ Advanced features initialization failed: {e}")
+    
+    # Initialize new detection features
+    global weapon_detector, violence_detector, ppe_detector
+    global fall_detector, crowd_density, loitering_detector, abandoned_object_detector
+    
+    if ADVANCED_FEATURES_AVAILABLE and weapon_detector is None:
+        try:
+            weapon_detector = WeaponDetector()
+            violence_detector = ViolenceDetector()
+            ppe_detector = PPEDetector(zone_type="construction")
+            fall_detector = FallDetector()
+            crowd_density = CrowdDensityEstimator()
+            loitering_detector = LoiteringDetector()
+            abandoned_object_detector = AbandonedObjectDetector()
+            print("✅ Detection features initialized (weapon, violence, PPE, fall, crowd, loitering, abandoned)")
+        except Exception as e:
+            print(f"⚠️ Detection features initialization failed: {e}")
 
 def process_standardized_alert(anomaly):
     """Process and standardize alerts to reduce noise."""
@@ -318,12 +359,10 @@ def process_standardized_alert(anomaly):
     message = anomaly.get('message', 'Alert detected')
     
     # Determine priority based on alert type and content
-    if alert_type in ['intrusion_detected', 'unknown_face_detected', 'crowd_detected']:
+    if alert_type in ['intrusion_detected', 'unknown_face_detected']:
         priority = StandardizedAlert.PRIORITY_HIGH
-    elif alert_type in ['suspicious_behavior', 'restricted_area_breach', 'restricted_area_violation']:
+    elif alert_type in ['suspicious_behavior', 'restricted_area_breach']:
         priority = StandardizedAlert.PRIORITY_MEDIUM
-    elif alert_type in ['person_detected', 'unattended_object']:
-        priority = StandardizedAlert.PRIORITY_LOW
     else:
         priority = StandardizedAlert.PRIORITY_LOW
     
@@ -474,48 +513,81 @@ def generate_frames():
                 # Object tracking
                 tracked_objects = tracker.update(detections)
                 
-                # === PERSON COUNT TRACKING ===
-                person_detections = [d for d in detections if d.get('class_name', '').lower() == 'person']
-                current_person_count = len(person_detections)
+                # Generate alerts for ALL detected objects by priority
+                high_priority_objects = ['knife', 'scissors']
+                medium_priority_objects = ['backpack', 'handbag', 'suitcase', 'laptop', 'cell phone']
+                vehicle_objects = ['car', 'truck', 'bicycle']
                 
-                # Update analytics_data with person count
-                analytics_data['person_count_current'] = current_person_count
-                if current_person_count > analytics_data.get('person_count_max', 0):
-                    analytics_data['person_count_max'] = current_person_count
+                # HIGH priority: dangerous objects
+                for obj in detections:
+                    class_name = obj.get('class_name', '')
+                    confidence = obj.get('confidence', 0)
+                    if class_name in high_priority_objects:
+                        alert = StandardizedAlert.create_alert(
+                            StandardizedAlert.TYPE_SUSPICIOUS_BEHAVIOR,
+                            f"Dangerous object: {class_name} detected (confidence: {confidence:.2f})",
+                            StandardizedAlert.PRIORITY_HIGH,
+                            {'class_name': class_name, 'confidence': confidence, 'bbox': obj.get('bbox')}
+                        )
+                        if alert:
+                            alerts_history.append(alert)
+                            save_alert_to_db(alert)
                 
-                # Record person count history (keep last 500 data points)
-                analytics_data.setdefault('person_count_history', [])
-                analytics_data['person_count_history'].append({
-                    'timestamp': datetime.now().isoformat(),
-                    'count': current_person_count
-                })
-                if len(analytics_data['person_count_history']) > 500:
-                    analytics_data['person_count_history'] = analytics_data['person_count_history'][-500:]
+                # MEDIUM priority: notable objects (bags, electronics)
+                notable_objects = [d for d in detections if d.get('class_name') in medium_priority_objects]
+                if notable_objects:
+                    obj_summary = ', '.join(set(d['class_name'] for d in notable_objects))
+                    alert = StandardizedAlert.create_alert(
+                        'notable_object',
+                        f"Notable object(s): {obj_summary} ({len(notable_objects)} detected)",
+                        StandardizedAlert.PRIORITY_MEDIUM,
+                        {'objects': [{'class': d['class_name'], 'confidence': d['confidence']} for d in notable_objects]}
+                    )
+                    if alert:
+                        alerts_history.append(alert)
+                        save_alert_to_db(alert)
                 
-                # === PERSON DETECTION ALERTS ===
-                if current_person_count > 0:
-                    person_alert = StandardizedAlert.create_alert(
-                        'person_detected',
-                        f"{current_person_count} person(s) detected in surveillance area",
+                # LOW priority: persons
+                person_count = sum(1 for d in detections if d.get('class_name') == 'person')
+                if person_count > 0:
+                    alert = StandardizedAlert.create_alert(
+                        StandardizedAlert.TYPE_OBJECT_DETECTION,
+                        f"{person_count} person(s) detected in surveillance area",
                         StandardizedAlert.PRIORITY_LOW,
-                        {'person_count': current_person_count, 'timestamp': datetime.now().isoformat()}
+                        {'person_count': person_count, 'total_objects': len(detections)}
                     )
-                    if person_alert:
-                        alerts_history.append(person_alert)
-                        save_alert_to_db(person_alert)
+                    if alert:
+                        alerts_history.append(alert)
+                        save_alert_to_db(alert)
                 
-                # === CROWD DETECTION ALERT (threshold: 5 persons) ===
-                CROWD_THRESHOLD = 5
-                if current_person_count >= CROWD_THRESHOLD:
-                    crowd_alert = StandardizedAlert.create_alert(
-                        'crowd_detected',
-                        f"Crowd alert: {current_person_count} persons detected (threshold: {CROWD_THRESHOLD})",
-                        StandardizedAlert.PRIORITY_HIGH,
-                        {'person_count': current_person_count, 'threshold': CROWD_THRESHOLD}
+                # LOW priority: vehicles
+                vehicles = [d for d in detections if d.get('class_name') in vehicle_objects]
+                if vehicles:
+                    vehicle_types = ', '.join(set(d['class_name'] for d in vehicles))
+                    alert = StandardizedAlert.create_alert(
+                        StandardizedAlert.TYPE_OBJECT_DETECTION,
+                        f"Vehicle detected: {vehicle_types} ({len(vehicles)} total)",
+                        StandardizedAlert.PRIORITY_LOW,
+                        {'vehicle_count': len(vehicles), 'types': list(set(d['class_name'] for d in vehicles))}
                     )
-                    if crowd_alert:
-                        alerts_history.append(crowd_alert)
-                        save_alert_to_db(crowd_alert)
+                    if alert:
+                        alerts_history.append(alert)
+                        save_alert_to_db(alert)
+                
+                # LOW priority: other objects (bottle, sports ball, etc.)
+                other_objects = [d for d in detections if d.get('class_name') not in 
+                                high_priority_objects + medium_priority_objects + vehicle_objects + ['person']]
+                if other_objects:
+                    obj_names = ', '.join(set(d['class_name'] for d in other_objects))
+                    alert = StandardizedAlert.create_alert(
+                        StandardizedAlert.TYPE_OBJECT_DETECTION,
+                        f"Object(s) detected: {obj_names}",
+                        StandardizedAlert.PRIORITY_LOW,
+                        {'objects': list(set(d['class_name'] for d in other_objects)), 'count': len(other_objects)}
+                    )
+                    if alert:
+                        alerts_history.append(alert)
+                        save_alert_to_db(alert)
                 
                 # Facial recognition (if available)
                 face_detections = []
@@ -545,10 +617,142 @@ def generate_frames():
                 for anomaly in anomalies:
                     process_standardized_alert(anomaly)
                 
+                # --- Advanced Detection Features ---
+                person_dets = [d for d in detections if d.get('class_name') == 'person']
+                
+                # Fall detection
+                if fall_detector and person_dets:
+                    try:
+                        fall_events = fall_detector.detect_falls(frame, person_dets)
+                        for event in fall_events:
+                            alert = StandardizedAlert.create_alert(
+                                'fall_detected',
+                                event['message'],
+                                StandardizedAlert.PRIORITY_HIGH,
+                                event
+                            )
+                            if alert:
+                                alerts_history.append(alert)
+                                save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
+                # Loitering detection
+                if loitering_detector and person_dets:
+                    try:
+                        loiter_events = loitering_detector.detect_loitering(frame, person_dets)
+                        for event in loiter_events:
+                            alert = StandardizedAlert.create_alert(
+                                'loitering_detected',
+                                event['message'],
+                                event.get('priority', StandardizedAlert.PRIORITY_MEDIUM),
+                                event
+                            )
+                            if alert:
+                                alerts_history.append(alert)
+                                save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
+                # Violence/fight detection
+                if violence_detector and len(person_dets) >= 2:
+                    try:
+                        violence_events = violence_detector.detect_violence(frame, person_dets)
+                        for event in violence_events:
+                            alert = StandardizedAlert.create_alert(
+                                'violence_detected',
+                                event['description'],
+                                StandardizedAlert.PRIORITY_HIGH,
+                                event
+                            )
+                            if alert:
+                                alerts_history.append(alert)
+                                save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
+                # Crowd density estimation
+                if crowd_density and person_dets:
+                    try:
+                        density_result = crowd_density.update(frame, detections)
+                        for crowd_alert in density_result.get('alerts', []):
+                            alert = StandardizedAlert.create_alert(
+                                'overcrowding',
+                                crowd_alert['message'],
+                                crowd_alert.get('priority', StandardizedAlert.PRIORITY_MEDIUM),
+                                crowd_alert
+                            )
+                            if alert:
+                                alerts_history.append(alert)
+                                save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
+                # Abandoned object detection
+                if abandoned_object_detector:
+                    try:
+                        abandoned_events = abandoned_object_detector.detect_abandoned_objects(
+                            frame, detections, person_dets
+                        )
+                        for event in abandoned_events:
+                            alert = StandardizedAlert.create_alert(
+                                'abandoned_object',
+                                event['message'],
+                                StandardizedAlert.PRIORITY_HIGH,
+                                event
+                            )
+                            if alert:
+                                alerts_history.append(alert)
+                                save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
+                # Weapon detection
+                if weapon_detector:
+                    try:
+                        weapon_events = weapon_detector.detect_weapons(frame, person_dets)
+                        for event in weapon_events:
+                            alert = StandardizedAlert.create_alert(
+                                'weapon_detected',
+                                event['description'],
+                                StandardizedAlert.PRIORITY_HIGH,
+                                event
+                            )
+                            if alert:
+                                alerts_history.append(alert)
+                                save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
+                # PPE compliance check
+                if ppe_detector and person_dets:
+                    try:
+                        ppe_results = ppe_detector.detect_ppe(frame, person_dets)
+                        for result in ppe_results:
+                            if not result['is_compliant']:
+                                missing = ', '.join(result['missing_ppe'])
+                                alert = StandardizedAlert.create_alert(
+                                    'ppe_violation',
+                                    f"PPE violation: Missing {missing}",
+                                    StandardizedAlert.PRIORITY_MEDIUM,
+                                    result
+                                )
+                                if alert:
+                                    alerts_history.append(alert)
+                                    save_alert_to_db(alert)
+                    except Exception as e:
+                        pass
+                
                 # Cache results for skipped frames
                 cached_detections = detections.copy() if detections else []
                 cached_tracked_objects = tracked_objects.copy() if tracked_objects else {}
                 cached_face_detections = face_detections.copy() if face_detections else []
+                
+                # Update live detection stats
+                live_detection_stats['objects_in_view'] = len(detections)
+                live_detection_stats['faces_detected'] = len(face_detections)
+                live_detection_stats['tracked_objects'] = len(tracked_objects)
+                live_detection_stats['last_update'] = datetime.now().isoformat()
                 
                 detection_time = time.time() - detection_start
             else:
@@ -556,7 +760,6 @@ def generate_frames():
                 detections = cached_detections
                 tracked_objects = cached_tracked_objects
                 face_detections = cached_face_detections
-                current_person_count = analytics_data.get('person_count_current', 0)
             
             # Draw face detections if available
             if facial_recognition and face_detections:
@@ -580,23 +783,13 @@ def generate_frames():
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 1)
                 cv2.putText(frame, f"ID: {track_id}", (x1, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
             
-            # Add system status overlay with FPS and person count
+            # Add system status overlay with FPS
             status_text = f"FPS: {display_fps:.1f} | Objects: {len(detections)} | Tracked: {len(tracked_objects)} | Faces: {len(face_detections)}"
             cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             
             # Add optimization indicator
             opt_text = f"Skip: {FRAME_SKIP} | GPU: {'Yes' if USE_GPU else 'No'}"
             cv2.putText(frame, opt_text, (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-            
-            # === PERSON COUNT OVERLAY (top-right) ===
-            person_count_text = f"Persons: {current_person_count}"
-            text_size = cv2.getTextSize(person_count_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
-            text_x = frame.shape[1] - text_size[0] - 20
-            # Draw background rectangle for person count
-            cv2.rectangle(frame, (text_x - 10, 10), (frame.shape[1] - 10, 45), (0, 0, 0), -1)
-            cv2.rectangle(frame, (text_x - 10, 10), (frame.shape[1] - 10, 45), (0, 217, 165), 2)
-            person_color = (0, 255, 0) if current_person_count < 5 else (0, 0, 255)
-            cv2.putText(frame, person_count_text, (text_x, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.8, person_color, 2)
             
             # Add timestamp
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -739,6 +932,7 @@ def get_alerts():
         limit = request.args.get('limit', type=int)
         alert_type = request.args.get('type', None)
         priority = request.args.get('priority', None)
+        hours = request.args.get('hours', 24, type=int)
         
         # Query database for alerts
         conn = sqlite3.connect(get_alerts_db_path())
@@ -750,13 +944,20 @@ def get_alerts():
         conditions = []
         
         # Add dismissed filter if column exists
+        has_dismissed = False
         try:
             cursor.execute("PRAGMA table_info(alerts)")
             columns = [column[1] for column in cursor.fetchall()]
             if 'dismissed' in columns:
+                has_dismissed = True
                 conditions.append('(dismissed IS NULL OR dismissed = 0)')
         except:
             pass
+        
+        # Default: only show alerts from the last N hours
+        time_threshold = (datetime.now() - timedelta(hours=hours)).isoformat()
+        conditions.append('timestamp >= ?')
+        params.append(time_threshold)
         
         if alert_type:
             conditions.append('type = ?')
@@ -772,9 +973,25 @@ def get_alerts():
         if limit and limit > 0:
             query += ' LIMIT ?'
             params.append(limit)
+        else:
+            query += ' LIMIT 50'
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
+        
+        # If no recent alerts found, fall back to showing the latest alerts regardless of time
+        if not rows and not alert_type and not priority:
+            fallback_query = 'SELECT id, type, message, priority, timestamp, data FROM alerts'
+            fallback_params = []
+            fallback_conditions = []
+            if has_dismissed:
+                fallback_conditions.append('(dismissed IS NULL OR dismissed = 0)')
+            if fallback_conditions:
+                fallback_query += ' WHERE ' + ' AND '.join(fallback_conditions)
+            fallback_query += ' ORDER BY timestamp DESC LIMIT 20'
+            cursor.execute(fallback_query, fallback_params)
+            rows = cursor.fetchall()
+        
         conn.close()
         
         # Convert to alert objects
@@ -1061,9 +1278,6 @@ def initialize_alerts_database():
             pass
         
         # Check if we have any alerts
-        # Reset dismissed alerts on fresh startup so notifications show again
-        cursor.execute('UPDATE alerts SET dismissed = 0 WHERE dismissed = 1')
-        
         cursor.execute('SELECT COUNT(*) FROM alerts')
         count = cursor.fetchone()[0]
         
@@ -1297,9 +1511,6 @@ def search_person_by_id():
 analytics_data = {
     'detection_count': 0,
     'person_count': 0,
-    'person_count_current': 0,
-    'person_count_max': 0,
-    'person_count_history': [],
     'start_time': datetime.now(),
     'hourly_detections': [0] * 24,
     'object_categories': {},
@@ -1398,36 +1609,6 @@ def get_analytics_trends():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
-# ============================================
-# Person Count API Endpoint
-# ============================================
-
-@main.route('/api/person_count')
-def get_person_count():
-    """Get real-time person count data with trace history."""
-    global analytics_data
-    
-    try:
-        history = analytics_data.get('person_count_history', [])
-        
-        # Get last N entries (default 100)
-        limit = request.args.get('limit', 100, type=int)
-        recent_history = history[-limit:] if history else []
-        
-        return jsonify({
-            'success': True,
-            'current_count': analytics_data.get('person_count_current', 0),
-            'max_count': analytics_data.get('person_count_max', 0),
-            'total_persons_detected': analytics_data.get('person_count', 0),
-            'history': recent_history,
-            'history_length': len(history),
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 
 def record_detection_analytics(detections):
     """Record detection data for analytics."""

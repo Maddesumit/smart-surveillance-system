@@ -151,6 +151,42 @@ def get_dashboard_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@api.route('/analytics/live_stats')
+def get_live_stats():
+    """Get real-time live statistics for the dashboard."""
+    try:
+        from flask import current_app
+        stats = {}
+        if hasattr(current_app, 'get_shared_stats'):
+            stats = current_app.get_shared_stats()
+        
+        # Try to get live stats from main_routes detection loop
+        try:
+            from dashboard.routes.main_routes import live_detection_stats
+            live_stats = {
+                'objects_in_view': live_detection_stats.get('objects_in_view', 0),
+                'faces_detected': live_detection_stats.get('faces_detected', 0),
+                'tracked_objects': live_detection_stats.get('tracked_objects', 0)
+            }
+        except ImportError:
+            live_stats = stats.get('live_stats', {
+                'objects_in_view': 0,
+                'faces_detected': 0,
+                'tracked_objects': 0
+            })
+        
+        return jsonify({
+            'timestamp': datetime.now().isoformat(),
+            'live_stats': live_stats,
+            'detection_stats': {
+                'objects_detected_today': stats.get('objects_detected_today', 0),
+                'faces_recognized_today': stats.get('faces_recognized_today', 0),
+                'alerts_generated_today': stats.get('alerts_generated_today', 0)
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @api.route('/behavior_analysis/status')
 def behavior_analysis_status():
     """Get behavior analysis system status."""

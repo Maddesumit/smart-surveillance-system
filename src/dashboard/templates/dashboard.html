@@ -519,11 +519,6 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="#" data-section="person-count">
-                        <i class="fas fa-users me-2"></i> Person Count
-                    </a>
-                </li>
-                <li class="nav-item">
                     <a class="nav-link" href="#" data-section="settings">
                         <i class="fas fa-cog me-2"></i> Settings
                     </a>
@@ -562,11 +557,6 @@
                 <div class="stat-item">
                     <div class="stat-number text-warning" id="alerts-generated">0</div>
                     <div class="stat-label">Alerts Generated</div>
-                </div>
-                <div class="stat-item" style="border-left: 3px solid #00d9a5;">
-                    <div class="stat-number" style="color: #00d9a5;" id="live-person-count">0</div>
-                    <div class="stat-label">Persons in Frame</div>
-                    <small class="text-muted">Max: <span id="max-person-count">0</span></small>
                 </div>
                 <div class="stat-item">
                     <div class="stat-number text-info" id="system-uptime">0:00:00</div>
@@ -652,7 +642,8 @@
         <!-- Video Section -->
         <div id="video-section" class="content-section" style="display: none;">
             <div class="row">
-                <div class="col-lg-8">
+                <!-- Left: Live Video Feed -->
+                <div class="col-lg-7">
                     <div class="video-container">
                         <img id="live-video-feed" src="{{ url_for('main.video_feed') }}" class="video-feed"
                             alt="Live Video Feed">
@@ -660,77 +651,74 @@
                             <i class="fas fa-circle text-danger me-1"></i> LIVE
                         </div>
                     </div>
-                </div>
-                <div class="col-lg-4">
-                    <!-- Camera Selector Card -->
-                    <div class="status-card">
-                        <h5><i class="fas fa-camera me-2"></i>Camera Selection</h5>
-                        <div class="mt-3">
-                            <label class="form-label">Select Camera</label>
-                            <select class="form-select" id="camera-selector" onchange="switchCamera()">
-                                <option value="0">Loading cameras...</option>
-                            </select>
-                            <div id="camera-switch-status" class="mt-2" style="display: none;">
+                    <!-- Camera Controls Below Video -->
+                    <div class="status-card mt-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-camera me-2"></i>
+                                <select class="form-select form-select-sm" id="camera-selector" onchange="switchCamera()" style="width: auto;">
+                                    <option value="0">Loading cameras...</option>
+                                </select>
+                            </div>
+                            <div id="camera-switch-status" style="display: none;">
                                 <small class="text-muted">
-                                    <i class="fas fa-spinner fa-spin me-1"></i>Switching camera...
+                                    <i class="fas fa-spinner fa-spin me-1"></i>Switching...
                                 </small>
                             </div>
+                            <div class="d-flex align-items-center gap-3">
+                                <small><strong>Resolution:</strong> <span id="video-resolution">1920x1080</span></small>
+                                <small><strong>FPS:</strong> <span id="video-fps">60</span></small>
+                                <small><strong>Source:</strong> <span id="video-source">Camera 0</span></small>
+                                <button class="btn btn-outline-professional btn-sm" onclick="refreshCameraList()">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div class="mt-3">
-                            <button class="btn btn-professional btn-sm w-100" onclick="refreshCameraList()">
-                                <i class="fas fa-sync-alt me-1"></i>Refresh Camera List
+                    </div>
+                </div>
+
+                <!-- Right: Live Alerts Panel -->
+                <div class="col-lg-5">
+                    <!-- Live Detection Stats -->
+                    <div class="status-card mb-3">
+                        <h5><i class="fas fa-eye me-2"></i>Live Detection</h5>
+                        <div class="d-flex justify-content-between mt-3">
+                            <div class="text-center">
+                                <div class="stat-number" style="font-size: 1.8rem;" id="live-objects">0</div>
+                                <small class="text-muted">Objects</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="stat-number" style="font-size: 1.8rem;" id="live-faces">0</div>
+                                <small class="text-muted">Faces</small>
+                            </div>
+                            <div class="text-center">
+                                <div class="stat-number" style="font-size: 1.8rem;" id="live-tracked">0</div>
+                                <small class="text-muted">Tracked</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Alerts Feed -->
+                    <div class="status-card" style="max-height: calc(100vh - 320px); display: flex; flex-direction: column;">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0"><i class="fas fa-bell me-2"></i>Live Alerts</h5>
+                            <button class="btn btn-outline-professional btn-sm" onclick="clearAllAlerts()">
+                                <i class="fas fa-trash me-1"></i>Clear
                             </button>
                         </div>
-                    </div>
-                    <div class="status-card">
-                        <h5><i class="fas fa-info-circle me-2"></i>Video Information</h5>
-                        <div class="mt-3">
-                            <p><strong>Resolution:</strong> <span id="video-resolution">1280x720</span></p>
-                            <p><strong>FPS:</strong> <span id="video-fps">30</span></p>
-                            <p><strong>Source:</strong> <span id="video-source">Camera 0</span></p>
-                            <p><strong>Status:</strong> <span class="text-success">Streaming</span></p>
-                        </div>
-                    </div>
-                    <div class="status-card">
-                        <h5><i class="fas fa-eye me-2"></i>Live Detection Stats</h5>
-                        <div class="mt-3">
-                            <p><strong>Objects in View:</strong> <span id="live-objects">0</span></p>
-                            <p><strong>Faces Detected:</strong> <span id="live-faces">0</span></p>
-                            <p><strong>Tracked Objects:</strong> <span id="live-tracked">0</span></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Priority-Based Alerts Below Video -->
-            <div class="row mt-4">
-                <div class="col-md-4">
-                    <div class="status-card" style="border-left: 4px solid #dc3545;">
-                        <h5 class="text-danger"><i class="fas fa-exclamation-circle me-2"></i>High Priority</h5>
-                        <div id="video-alerts-high" class="alerts-column" style="max-height: 250px; overflow-y: auto;">
-                            <div class="text-center text-muted py-3">
-                                <i class="fas fa-check-circle me-1"></i>No high priority alerts
-                            </div>
+                        <!-- Priority Tabs -->
+                        <div class="d-flex gap-1 mb-3">
+                            <button class="alert-filter-btn active" data-alert-tab="all" onclick="filterVideoAlerts('all', this)" style="padding: 5px 12px; font-size: 0.8rem; background: linear-gradient(135deg, #667eea, #764ba2); border: none; color: white; border-radius: 8px; cursor: pointer;">All</button>
+                            <button class="alert-filter-btn" data-alert-tab="high" onclick="filterVideoAlerts('high', this)" style="padding: 5px 12px; font-size: 0.8rem; background: transparent; border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer;"><i class="fas fa-exclamation-circle text-danger"></i> High</button>
+                            <button class="alert-filter-btn" data-alert-tab="medium" onclick="filterVideoAlerts('medium', this)" style="padding: 5px 12px; font-size: 0.8rem; background: transparent; border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer;"><i class="fas fa-exclamation-triangle text-warning"></i> Med</button>
+                            <button class="alert-filter-btn" data-alert-tab="low" onclick="filterVideoAlerts('low', this)" style="padding: 5px 12px; font-size: 0.8rem; background: transparent; border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer;"><i class="fas fa-info-circle text-success"></i> Low</button>
                         </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="status-card" style="border-left: 4px solid #ffc107;">
-                        <h5 class="text-warning"><i class="fas fa-exclamation-triangle me-2"></i>Medium Priority</h5>
-                        <div id="video-alerts-medium" class="alerts-column"
-                            style="max-height: 250px; overflow-y: auto;">
+
+                        <!-- Scrollable Alerts List -->
+                        <div id="video-alerts-live" style="overflow-y: auto; flex: 1;">
                             <div class="text-center text-muted py-3">
-                                <i class="fas fa-check-circle me-1"></i>No medium priority alerts
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="status-card" style="border-left: 4px solid #28a745;">
-                        <h5 class="text-success"><i class="fas fa-info-circle me-2"></i>Low Priority</h5>
-                        <div id="video-alerts-low" class="alerts-column" style="max-height: 250px; overflow-y: auto;">
-                            <div class="text-center text-muted py-3">
-                                <i class="fas fa-check-circle me-1"></i>No low priority alerts
+                                <i class="fas fa-check-circle me-1"></i>No recent alerts
                             </div>
                         </div>
                     </div>
@@ -766,8 +754,6 @@
                                     <option value="restricted_area_violation">Restricted Area Violation</option>
                                     <option value="motion_detection">Motion Detection</option>
                                     <option value="system_alert">System Alert</option>
-                                    <option value="person_detected">Person Detected</option>
-                                    <option value="crowd_detected">Crowd Detected</option>
                                 </select>
                             </div>
                             <button class="btn btn-professional w-100" onclick="applyAlertFilters()">
@@ -919,67 +905,6 @@
                         <div id="person-tracks-list">
                             <div class="text-center text-muted py-3">No recent person tracks</div>
                         </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Person Count Section -->
-        <div id="person-count-section" class="content-section" style="display: none;">
-            <div class="row">
-                <div class="col-md-3">
-                    <div class="status-card" style="border-left: 4px solid #00d9a5;">
-                        <div class="stat-number" style="color: #00d9a5;" id="pc-current-count">0</div>
-                        <div class="stat-label">Current Persons in Frame</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="status-card" style="border-left: 4px solid #ff6b6b;">
-                        <div class="stat-number text-danger" id="pc-max-count">0</div>
-                        <div class="stat-label">Max Persons Seen</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="status-card" style="border-left: 4px solid #4facfe;">
-                        <div class="stat-number text-info" id="pc-total-detected">0</div>
-                        <div class="stat-label">Total Person Detections</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="status-card" style="border-left: 4px solid #ffc107;">
-                        <div class="stat-number text-warning" id="pc-history-length">0</div>
-                        <div class="stat-label">Data Points Collected</div>
-                    </div>
-                </div>
-            </div>
-            <div class="row mt-3">
-                <div class="col-md-12">
-                    <div class="status-card">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5><i class="fas fa-chart-area me-2"></i>Person Count Trace (Real-Time)</h5>
-                            <div>
-                                <button class="btn btn-outline-professional btn-sm me-1" onclick="loadPersonCountData(50)">
-                                    Last 50
-                                </button>
-                                <button class="btn btn-outline-professional btn-sm me-1" onclick="loadPersonCountData(100)">
-                                    Last 100
-                                </button>
-                                <button class="btn btn-outline-professional btn-sm" onclick="loadPersonCountData(300)">
-                                    Last 300
-                                </button>
-                            </div>
-                        </div>
-                        <div style="height: 350px; position: relative;">
-                            <canvas id="person-count-trace-chart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="row mt-3">
-                <div class="col-md-12">
-                    <div class="status-card">
-                        <h5><i class="fas fa-info-circle me-2"></i>About Person Count Tracking</h5>
-                        <p class="text-muted">This feature tracks the number of persons detected in each video frame by the YOLOv8 object detector. The trace chart shows the person count over time, helping you identify peak activity periods and crowd buildup. A high-priority alert is triggered when the person count exceeds 5.</p>
                     </div>
                 </div>
             </div>
@@ -1405,7 +1330,7 @@
         // Navigation setup
         function setupNavigation() {
             console.log('Setting up navigation...');
-            const navLinks = document.querySelectorAll('.nav-link');
+            const navLinks = document.querySelectorAll('.sidebar .nav-link[data-section]');
             console.log('Found navigation links:', navLinks.length);
 
             navLinks.forEach((link, index) => {
@@ -1417,8 +1342,8 @@
                     console.log('Navigation clicked:', section);
                     showSection(section);
 
-                    // Update active nav item
-                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    // Update active nav item (only sidebar links)
+                    document.querySelectorAll('.sidebar .nav-link[data-section]').forEach(l => l.classList.remove('active'));
                     this.classList.add('active');
                 });
             });
@@ -1474,9 +1399,6 @@
                     break;
                 case 'analytics':
                     loadAnalyticsData();
-                    break;
-                case 'person-count':
-                    loadPersonCountData();
                     break;
                 case 'settings':
                     loadCameraList();
@@ -1539,40 +1461,94 @@
 
         // Display alerts in video section by priority
         function displayVideoSectionAlerts(alerts) {
-            const highContainer = document.getElementById('video-alerts-high');
-            const mediumContainer = document.getElementById('video-alerts-medium');
-            const lowContainer = document.getElementById('video-alerts-low');
+            const container = document.getElementById('video-alerts-live');
+            if (!container) return;
 
-            if (!highContainer || !mediumContainer || !lowContainer) return;
+            // Store alerts globally for filtering
+            window._videoAlerts = alerts;
 
-            // Filter alerts by priority
-            const highAlerts = alerts.filter(a => a.priority === 'high');
-            const mediumAlerts = alerts.filter(a => a.priority === 'medium');
-            const lowAlerts = alerts.filter(a => a.priority === 'low');
+            // Get current filter
+            const activeTab = document.querySelector('.alert-filter-btn.active');
+            const currentFilter = activeTab ? activeTab.getAttribute('data-alert-tab') : 'all';
 
-            // Helper function to create alert HTML
-            const createAlertHtml = (alertList, emptyMessage, colorClass) => {
-                if (alertList.length === 0) {
-                    return `<div class="text-center text-muted py-3"><i class="fas fa-check-circle me-1"></i>${emptyMessage}</div>`;
-                }
-                return alertList.slice(0, 5).map(alert => `
-                    <div class="alert-item mb-2 p-2" style="background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid ${colorClass};">
+            renderVideoAlerts(alerts, currentFilter);
+        }
+
+        // Render video alerts based on filter
+        function renderVideoAlerts(alerts, filter) {
+            const container = document.getElementById('video-alerts-live');
+            if (!container) return;
+
+            let filtered = alerts;
+            if (filter && filter !== 'all') {
+                filtered = alerts.filter(a => a.priority === filter);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-check-circle me-1"></i>No alerts</div>';
+                return;
+            }
+
+            container.innerHTML = filtered.slice(0, 20).map(alert => {
+                const priorityColor = alert.priority === 'high' ? '#dc3545' : alert.priority === 'medium' ? '#ffc107' : '#28a745';
+                const priorityIcon = alert.priority === 'high' ? 'exclamation-circle' : alert.priority === 'medium' ? 'exclamation-triangle' : 'info-circle';
+                const timeAgo = getTimeAgo(new Date(alert.timestamp));
+                return `
+                    <div class="alert-item mb-2 p-2" style="background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid ${priorityColor}; transition: all 0.2s;">
                         <div class="d-flex justify-content-between align-items-start">
                             <div style="flex: 1;">
-                                <small class="d-block" style="color: var(--text-primary);">${alert.message.substring(0, 50)}${alert.message.length > 50 ? '...' : ''}</small>
-                                <small class="text-muted">${new Date(alert.timestamp).toLocaleTimeString()}</small>
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="fas fa-${priorityIcon} me-1" style="color: ${priorityColor}; font-size: 0.75rem;"></i>
+                                    <small style="color: var(--text-primary); font-weight: 500;">${alert.message.substring(0, 60)}${alert.message.length > 60 ? '...' : ''}</small>
+                                </div>
+                                <small class="text-muted" style="font-size: 0.7rem;">${timeAgo}</small>
                             </div>
                             <button class="btn btn-sm" style="padding: 2px 6px;" onclick="dismissAlert('${alert.id}')">
-                                <i class="fas fa-times text-muted"></i>
+                                <i class="fas fa-times text-muted" style="font-size: 0.7rem;"></i>
                             </button>
                         </div>
                     </div>
-                `).join('');
-            };
+                `;
+            }).join('');
+        }
 
-            highContainer.innerHTML = createAlertHtml(highAlerts, 'No high priority alerts', '#dc3545');
-            mediumContainer.innerHTML = createAlertHtml(mediumAlerts, 'No medium priority alerts', '#ffc107');
-            lowContainer.innerHTML = createAlertHtml(lowAlerts, 'No low priority alerts', '#28a745');
+        // Filter video alerts by tab
+        function filterVideoAlerts(filter, element) {
+            // Update active tab styling
+            document.querySelectorAll('.alert-filter-btn').forEach(btn => {
+                btn.style.background = 'transparent';
+                btn.style.border = '1px solid rgba(255,255,255,0.18)';
+                btn.style.color = 'rgba(255,255,255,0.7)';
+                btn.classList.remove('active');
+            });
+            element.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+            element.style.border = 'none';
+            element.style.color = 'white';
+            element.classList.add('active');
+
+            // Re-render with filter
+            if (window._videoAlerts && window._videoAlerts.length > 0) {
+                renderVideoAlerts(window._videoAlerts, filter);
+            } else {
+                const container = document.getElementById('video-alerts-live');
+                if (container) {
+                    container.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-check-circle me-1"></i>No ' + (filter === 'all' ? '' : filter + ' priority ') + 'alerts</div>';
+                }
+            }
+        }
+
+        // Get human-readable time ago
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+            const diffHr = Math.floor(diffMin / 60);
+
+            if (diffSec < 60) return 'Just now';
+            if (diffMin < 60) return `${diffMin}m ago`;
+            if (diffHr < 24) return `${diffHr}h ago`;
+            return date.toLocaleString();
         }
 
         // Display recent alerts
@@ -1713,151 +1689,9 @@
         // Start periodic updates
         function startPeriodicUpdates() {
             setInterval(loadSystemStatus, 30000); // Every 30 seconds
-            setInterval(loadAlerts, 10000); // Every 10 seconds
+            setInterval(loadAlerts, 5000); // Every 5 seconds for live alerts
             setInterval(loadLiveStats, 2000); // Every 2 seconds for live stats
             setInterval(loadDashboardData, 10000); // Every 10 seconds for dashboard data
-            setInterval(loadPersonCountQuick, 3000); // Every 3 seconds for person count
-        }
-
-        // ============================================
-        // Person Count Functions
-        // ============================================
-        let personCountChart = null;
-        let personCountUpdateInterval = null;
-
-        function loadPersonCountQuick() {
-            // Quick update for dashboard stat cards (doesn't redraw chart)
-            fetch('/api/person_count?limit=1')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Update dashboard stat cards
-                        const liveEl = document.getElementById('live-person-count');
-                        const maxEl = document.getElementById('max-person-count');
-                        if (liveEl) liveEl.textContent = data.current_count;
-                        if (maxEl) maxEl.textContent = data.max_count;
-                    }
-                })
-                .catch(error => {
-                    // Silent fail for quick updates
-                });
-        }
-
-        function loadPersonCountData(limit = 100) {
-            fetch(`/api/person_count?limit=${limit}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Update stat cards in Person Count section
-                        const pcCurrent = document.getElementById('pc-current-count');
-                        const pcMax = document.getElementById('pc-max-count');
-                        const pcTotal = document.getElementById('pc-total-detected');
-                        const pcHistory = document.getElementById('pc-history-length');
-                        
-                        if (pcCurrent) pcCurrent.textContent = data.current_count;
-                        if (pcMax) pcMax.textContent = data.max_count;
-                        if (pcTotal) pcTotal.textContent = data.total_persons_detected;
-                        if (pcHistory) pcHistory.textContent = data.history_length;
-                        
-                        // Update dashboard stat cards too
-                        const liveEl = document.getElementById('live-person-count');
-                        const maxEl = document.getElementById('max-person-count');
-                        if (liveEl) liveEl.textContent = data.current_count;
-                        if (maxEl) maxEl.textContent = data.max_count;
-                        
-                        // Update trace chart
-                        updatePersonCountChart(data.history);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading person count data:', error);
-                });
-        }
-
-        function updatePersonCountChart(history) {
-            const canvas = document.getElementById('person-count-trace-chart');
-            if (!canvas) return;
-
-            const labels = history.map(h => {
-                const d = new Date(h.timestamp);
-                return d.toLocaleTimeString();
-            });
-            const counts = history.map(h => h.count);
-
-            if (personCountChart) {
-                personCountChart.data.labels = labels;
-                personCountChart.data.datasets[0].data = counts;
-                personCountChart.update('none'); // fast update without animation
-                return;
-            }
-
-            const ctx = canvas.getContext('2d');
-            personCountChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Person Count',
-                        data: counts,
-                        borderColor: '#00d9a5',
-                        backgroundColor: 'rgba(0, 217, 165, 0.15)',
-                        fill: true,
-                        tension: 0.3,
-                        borderWidth: 2,
-                        pointRadius: 1,
-                        pointHoverRadius: 5,
-                        pointBackgroundColor: '#00d9a5',
-                        pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#00d9a5',
-                        pointHoverBorderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: false,
-                    plugins: {
-                        legend: {
-                            labels: { color: 'rgba(255,255,255,0.7)' }
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            backgroundColor: 'rgba(0,0,0,0.8)',
-                            titleColor: '#fff',
-                            bodyColor: '#00d9a5'
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: {
-                                color: 'rgba(255,255,255,0.5)',
-                                maxTicksLimit: 15,
-                                maxRotation: 45
-                            },
-                            grid: { color: 'rgba(255,255,255,0.05)' }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                color: 'rgba(255,255,255,0.5)',
-                                stepSize: 1
-                            },
-                            grid: { color: 'rgba(255,255,255,0.05)' },
-                            title: {
-                                display: true,
-                                text: 'Number of Persons',
-                                color: 'rgba(255,255,255,0.7)'
-                            }
-                        }
-                    },
-                    interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
-                        intersect: false
-                    }
-                }
-            });
         }
 
         // Add alert to display (real-time)
@@ -2952,7 +2786,6 @@
             loadAlerts();
             loadDashboardData();
             loadLiveStats();
-            loadPersonCountQuick();
 
             // Start periodic updates
             startPeriodicUpdates();

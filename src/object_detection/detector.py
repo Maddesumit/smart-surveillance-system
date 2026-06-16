@@ -18,19 +18,29 @@ except ImportError:
     logger.warning("Enhanced detector not available, using basic detector")
 
 class ObjectDetector:
-    def __init__(self, model_size='s', confidence_threshold=0.25, use_enhanced=True):
+    def __init__(self, model_size='s', confidence_threshold=0.4, use_enhanced=True,
+                 imgsz=960, device='auto', allowed_classes=None):
         """
         Initialize the ObjectDetector.
 
         Args:
             model_size (str): Size of the model to use (e.g., 's', 'm', 'l' for YOLO).
                                 Corresponds to YOLOv8 model sizes (n, s, m, l, x).
+                                Larger models (m/l) are more accurate but slower.
             confidence_threshold (float): Minimum confidence score for a detection.
             use_enhanced (bool): Use enhanced detector if available.
+            imgsz (int): Inference resolution. Higher values (960, 1280) improve
+                         detection of small/distant objects at the cost of speed.
+            device (str): 'auto' (CUDA > MPS > CPU), or force 'cuda'/'mps'/'cpu'.
+            allowed_classes (list[str]|None): Restrict detection to these class
+                         names. None = all 80 COCO classes.
         """
         self.model_size = model_size
         self.confidence_threshold = confidence_threshold
         self.use_enhanced = use_enhanced and ENHANCED_AVAILABLE
+        self.imgsz = imgsz
+        self.device = device
+        self.allowed_classes = allowed_classes
         
         if self.use_enhanced:
             # Use enhanced detector
@@ -50,7 +60,10 @@ class ObjectDetector:
             self.detector = EnhancedObjectDetector(
                 model_path=model_path,
                 confidence_threshold=confidence_threshold,
-                surveillance_mode=True
+                surveillance_mode=True,
+                imgsz=imgsz,
+                device=device,
+                allowed_classes=allowed_classes
             )
         else:
             # Use basic detector
@@ -63,11 +76,39 @@ class ObjectDetector:
             from ultralytics import YOLO
             model_name = f'yolov8{self.model_size}.pt' 
             self.model = YOLO(model_name)
-            logger.info(f"{model_name} model loaded successfully (or will be downloaded).")
+            # Resolve and apply device (CUDA > MPS > CPU)
+            self.resolved_device = self._resolve_basic_device(self.device)
+            try:
+                self.model.to(self.resolved_device)
+            except Exception as e:
+                logger.warning(f"Could not move basic model to {self.resolved_device}: {e}")
+                self.resolved_device = 'cpu'
+            logger.info(f"{model_name} loaded on device: {self.resolved_device}")
+            # Resolve allowed class names -> ids for the basic path
+            self.basic_class_filter = None
+            if self.allowed_classes and hasattr(self.model, 'names'):
+                name_to_id = {name: idx for idx, name in self.model.names.items()}
+                ids = [name_to_id[n] for n in self.allowed_classes if n in name_to_id]
+                self.basic_class_filter = sorted(ids) if ids else None
         except Exception as e:
             logger.error(f"Error loading YOLO model ({model_name}): {e}")
             self.model = None 
             raise
+
+    @staticmethod
+    def _resolve_basic_device(device):
+        """Resolve best device for the basic detector path."""
+        if device and device != 'auto':
+            return device
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return 'cuda'
+            if getattr(torch.backends, 'mps', None) is not None and torch.backends.mps.is_available():
+                return 'mps'
+        except Exception:
+            pass
+        return 'cpu'
 
     def detect(self, frame):
         """
@@ -92,7 +133,11 @@ class ObjectDetector:
             logger.warning("Object detection model not loaded or failed to load. Returning empty detections.")
             return []
 
-        results = self.model(frame)
+        results = self.model(frame, conf=self.confidence_threshold,
+                              imgsz=self.imgsz,
+                              device=getattr(self, 'resolved_device', None),
+                              classes=getattr(self, 'basic_class_filter', None),
+                              verbose=False)
         
         detections = []
         for result in results:

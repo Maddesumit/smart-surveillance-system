@@ -44,3 +44,11 @@ logs/*
 *.h5
 *.pb
 
+
+# Facial recognition runtime data (generated at runtime)
+captured_faces/*
+!captured_faces/.gitkeep
+known_faces/*
+!known_faces/.gitkeep
+face_database.db
+face_encodings.pkl

@@ -38,7 +38,7 @@ USE_GPU = True  # Try to use GPU acceleration
 
 # Import advanced features
 try:
-    from advanced_features.facial_recognition import FacialRecognitionSystem
+    from advanced_features.facial_recognition import FacialRecognitionSystem, get_facial_recognition_system
     from advanced_features.behavior_analysis import BehaviorAnalyzer
     from advanced_features.person_reid import PersonReID
     from advanced_features.multi_camera_sync import MultiCameraManager
@@ -105,6 +105,57 @@ live_detection_stats = {
     'last_update': None
 }
 
+# Cumulative daily counters shown on the dashboard. These are updated by
+# generate_frames() (the detector that actually runs for the browser feed),
+# which is why the dashboard previously showed zero.
+daily_stats = {
+    'date': datetime.now().date().isoformat(),
+    'objects_detected_today': 0,
+    'faces_recognized_today': 0,
+    'alerts_generated_today': 0,
+}
+_last_counted_track_id = -1   # highest tracker id already counted
+_recent_face_recognitions = {}  # name -> last counted timestamp
+
+
+def _reset_daily_stats_if_new_day():
+    """Reset daily counters when the date rolls over."""
+    global _last_counted_track_id
+    today = datetime.now().date().isoformat()
+    if daily_stats['date'] != today:
+        daily_stats['date'] = today
+        daily_stats['objects_detected_today'] = 0
+        daily_stats['faces_recognized_today'] = 0
+        daily_stats['alerts_generated_today'] = 0
+        _last_counted_track_id = -1
+
+
+def count_new_objects(tracker_obj):
+    """Count unique new objects using the tracker's monotonic IDs.
+
+    Counts each object once when it first appears, instead of inflating the
+    number on every frame.
+    """
+    global _last_counted_track_id
+    try:
+        current_max_id = tracker_obj.next_object_id - 1
+        if current_max_id > _last_counted_track_id:
+            _reset_daily_stats_if_new_day()
+            daily_stats['objects_detected_today'] += (current_max_id - _last_counted_track_id)
+            _last_counted_track_id = current_max_id
+    except Exception:
+        pass
+
+
+def count_recognized_face(name='known', cooldown=10):
+    """Count a recognized known face, throttled per name to avoid over-counting."""
+    now = time.time()
+    last = _recent_face_recognitions.get(name, 0)
+    if now - last > cooldown:
+        _reset_daily_stats_if_new_day()
+        daily_stats['faces_recognized_today'] += 1
+        _recent_face_recognitions[name] = now
+
 
 def get_alerts_db_path():
     """Get canonical alerts database path."""
@@ -152,7 +203,7 @@ class StandardizedAlert:
         cls.last_alerts[alert_key] = current_time
         
         return {
-            'id': f"alert_{int(current_time.timestamp())}",
+            'id': f"alert_{current_time.strftime('%Y%m%d%H%M%S%f')}",
             'type': alert_type,
             'message': message,
             'priority': priority,
@@ -291,21 +342,49 @@ def initialize_components():
         else:
             video_stream = VideoStream(source=selected_camera_index)
         
-        # Initialize detector with GPU if available
-        if USE_GPU:
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    print(f"🎮 GPU detected: {torch.cuda.get_device_name(0)}")
-                    detector = ObjectDetector(device='cuda')
-                else:
-                    print("⚠️ GPU requested but not available, using CPU")
-                    detector = ObjectDetector()
-            except ImportError:
-                print("⚠️ PyTorch not installed for GPU detection, using CPU")
-                detector = ObjectDetector()
+        # Initialize detector. device='auto' picks CUDA > MPS (Apple GPU) > CPU,
+        # so this works on NVIDIA machines and Apple Silicon without crashing.
+        # Tunable via env vars without code changes:
+        #   YOLO_MODEL_SIZE (n|s|m|l|x)  - bigger = more accurate, slower
+        #   YOLO_IMGSZ       (e.g. 640|960|1280) - higher = better small objects
+        #   YOLO_CONF        (0-1)       - higher = fewer false positives
+        #   YOLO_CLASSES     comma list of class names to keep, or 'all'
+        model_size = os.environ.get('YOLO_MODEL_SIZE', 's')
+        imgsz = int(os.environ.get('YOLO_IMGSZ', '960'))
+        conf = float(os.environ.get('YOLO_CONF', '0.4'))
+        device = 'auto' if USE_GPU else 'cpu'
+
+        # IMPORTANT: This model (YOLOv8/COCO) only knows 80 fixed object types.
+        # Objects outside that list (e.g. a pen) get mislabeled as the closest
+        # known class (remote/toothbrush/scissors). That is a model limitation,
+        # not a threshold issue. For a surveillance system we therefore restrict
+        # detection to security-relevant classes so this noise disappears.
+        #
+        # Override anytime:
+        #   YOLO_CLASSES=all                      -> detect all 80 COCO classes
+        #   YOLO_CLASSES="person,car,truck"       -> custom set
+        default_classes = [
+            'person', 'backpack', 'handbag', 'suitcase',
+            'laptop', 'cell phone',
+            'knife', 'scissors',  # dangerous objects -> HIGH priority alerts
+        ]
+        classes_env = os.environ.get('YOLO_CLASSES', '').strip()
+        if classes_env.lower() == 'all':
+            allowed_classes = None
+        elif classes_env:
+            allowed_classes = [c.strip() for c in classes_env.split(',') if c.strip()]
         else:
-            detector = ObjectDetector()
+            allowed_classes = default_classes
+
+        detector = ObjectDetector(
+            model_size=model_size,
+            confidence_threshold=conf,
+            imgsz=imgsz,
+            device=device,
+            allowed_classes=allowed_classes,
+        )
+        print(f"🎯 Detector: yolov8{model_size} | imgsz={imgsz} | conf={conf} | device={device}")
+        print(f"🎯 Classes: {'ALL' if allowed_classes is None else ', '.join(allowed_classes)}")
         
         tracker = ObjectTracker()
         analyzer = AnomalyDetector()
@@ -324,7 +403,7 @@ def initialize_components():
     if ADVANCED_FEATURES_AVAILABLE and facial_recognition is None:
         print("🚀 Initializing advanced features...")
         try:
-            facial_recognition = FacialRecognitionSystem()
+            facial_recognition = get_facial_recognition_system()
             behavior_analyzer = BehaviorAnalyzer()
             person_reid = PersonReID()
             multi_camera = MultiCameraManager()
@@ -342,7 +421,20 @@ def initialize_components():
         try:
             weapon_detector = WeaponDetector()
             violence_detector = ViolenceDetector()
-            ppe_detector = PPEDetector(zone_type="construction")
+
+            # PPE detection is opt-in. The current detector uses simple color
+            # heuristics (looks for high-vis helmet/vest colors), so in any
+            # scene without safety gear it flags every person as non-compliant
+            # on every frame. Enable it only for real PPE monitoring zones by
+            # setting ENABLE_PPE_DETECTION=1 (and optionally PPE_ZONE_TYPE).
+            if os.environ.get('ENABLE_PPE_DETECTION', '0') == '1':
+                ppe_zone = os.environ.get('PPE_ZONE_TYPE', 'construction')
+                ppe_detector = PPEDetector(zone_type=ppe_zone)
+                print(f"✅ PPE detection enabled (zone: {ppe_zone})")
+            else:
+                ppe_detector = None
+                print("ℹ️ PPE detection disabled (set ENABLE_PPE_DETECTION=1 to enable)")
+
             fall_detector = FallDetector()
             crowd_density = CrowdDensityEstimator()
             loitering_detector = LoiteringDetector()
@@ -392,6 +484,13 @@ def process_standardized_alert(anomaly):
 def save_alert_to_db(alert):
     """Save alert to SQLite database and broadcast via Socket.IO."""
     try:
+        # Count alert for the daily dashboard stat
+        try:
+            _reset_daily_stats_if_new_day()
+            daily_stats['alerts_generated_today'] += 1
+        except Exception:
+            pass
+
         db_path = get_alerts_db_path()
         
         conn = sqlite3.connect(db_path)
@@ -513,6 +612,9 @@ def generate_frames():
                 # Object tracking
                 tracked_objects = tracker.update(detections)
                 
+                # Count unique new objects for the daily dashboard stat
+                count_new_objects(tracker)
+                
                 # Generate alerts for ALL detected objects by priority
                 high_priority_objects = ['knife', 'scissors']
                 medium_priority_objects = ['backpack', 'handbag', 'suitcase', 'laptop', 'cell phone']
@@ -594,8 +696,15 @@ def generate_frames():
                 if facial_recognition:
                     try:
                         face_detections = facial_recognition.detect_faces(frame)
-                        
-                        # Process unknown faces
+
+                        # Automatically capture unique face snapshots for the
+                        # gallery (deduplicated inside the engine).
+                        try:
+                            facial_recognition.capture_unique_faces(frame, face_detections)
+                        except Exception as cap_err:
+                            print(f"Error capturing faces: {cap_err}")
+
+                        # Process faces: named alerts for known, warnings for unknown
                         for face in face_detections:
                             if not face['is_known']:
                                 alert = StandardizedAlert.create_alert(
@@ -607,6 +716,20 @@ def generate_frames():
                                 if alert:
                                     alerts_history.append(alert)
                                     save_alert_to_db(alert)
+                            else:
+                                # Named recognition alert (e.g. "John Doe recognized")
+                                person_name = face.get('name', 'Known person')
+                                alert = StandardizedAlert.create_alert(
+                                    StandardizedAlert.TYPE_FACIAL_RECOGNITION,
+                                    f"{person_name} recognized (confidence: {face['confidence']:.2f})",
+                                    StandardizedAlert.PRIORITY_LOW,
+                                    {'name': person_name, 'bbox': face['bbox'], 'confidence': face['confidence']}
+                                )
+                                if alert:
+                                    alerts_history.append(alert)
+                                    save_alert_to_db(alert)
+                                # Count recognized known faces for the daily stat
+                                count_recognized_face(person_name)
                     except Exception as e:
                         print(f"Error in facial recognition: {e}")
                 
@@ -747,6 +870,15 @@ def generate_frames():
                 cached_detections = detections.copy() if detections else []
                 cached_tracked_objects = tracked_objects.copy() if tracked_objects else {}
                 cached_face_detections = face_detections.copy() if face_detections else []
+
+                # Person Re-ID processing (runs on person detections for tracking)
+                if person_reid and detections:
+                    try:
+                        person_dets_reid = [d for d in detections if d.get('class_name') == 'person']
+                        if person_dets_reid:
+                            person_reid.process_detections(frame, person_dets_reid, 'camera_0')
+                    except Exception as e:
+                        pass
                 
                 # Update live detection stats
                 live_detection_stats['objects_in_view'] = len(detections)
@@ -1389,50 +1521,53 @@ initialize_alerts_database()
 @main.route('/api/person_reid/tracks')
 def get_person_tracks():
     """Get tracked persons data for Person Re-ID section."""
-    global person_reid
+    global person_reid, facial_recognition
     
     try:
-        if person_reid is None:
-            # Return demo data if module not initialized
-            return jsonify({
-                'success': True,
-                'tracks': [
-                    {
-                        'person_id': 'P001',
-                        'first_seen': (datetime.now() - timedelta(hours=2)).isoformat(),
-                        'last_seen': datetime.now().isoformat(),
-                        'cameras': ['Camera 0', 'Camera 1'],
-                        'total_sightings': 5,
-                        'confidence': 0.85
-                    },
-                    {
-                        'person_id': 'P002',
-                        'first_seen': (datetime.now() - timedelta(hours=1)).isoformat(),
-                        'last_seen': datetime.now().isoformat(),
-                        'cameras': ['Camera 0'],
-                        'total_sightings': 3,
-                        'confidence': 0.92
-                    },
-                    {
-                        'person_id': 'P003',
-                        'first_seen': (datetime.now() - timedelta(minutes=30)).isoformat(),
-                        'last_seen': datetime.now().isoformat(),
-                        'cameras': ['Camera 1'],
-                        'total_sightings': 2,
-                        'confidence': 0.78
-                    }
-                ],
-                'total_tracked': 3,
-                'cross_camera_matches': 1
-            })
+        tracks = []
         
-        # Get real data from person_reid module
-        stats = person_reid.get_reid_stats()
+        # 1. Add known persons from facial recognition (these have real names)
+        if facial_recognition:
+            for cap in facial_recognition.get_captured_faces():
+                tracks.append({
+                    'person_id': cap.get('label', 'Unknown'),
+                    'first_seen': cap.get('first_seen', ''),
+                    'last_seen': cap.get('last_seen', ''),
+                    'cameras': ['camera_0'],
+                    'total_sightings': cap.get('detection_count', 1),
+                    'confidence': round(float(cap.get('confidence') or 0.8), 2)
+                })
+        
+        # 2. Add Re-ID gallery persons that don't overlap with facial recognition
+        if person_reid and person_reid.person_gallery:
+            known_names = set(t['person_id'] for t in tracks)
+            for pid, pdata in list(person_reid.person_gallery.items())[:20]:
+                # Skip if the name would be redundant
+                display_name = pid
+                # Try to find a matching face name via last seen camera overlap
+                first_seen = pdata.get('first_seen')
+                last_seen = pdata.get('last_seen')
+                if display_name not in known_names:
+                    tracks.append({
+                        'person_id': display_name,
+                        'first_seen': first_seen.isoformat() if hasattr(first_seen, 'isoformat') else str(first_seen or ''),
+                        'last_seen': last_seen.isoformat() if hasattr(last_seen, 'isoformat') else str(last_seen or ''),
+                        'cameras': list(pdata.get('cameras_seen', set())),
+                        'total_sightings': pdata.get('total_detections', 1),
+                        'confidence': 0.75
+                    })
+        
+        # Sort by last_seen descending
+        tracks.sort(key=lambda t: t.get('last_seen') or '', reverse=True)
+        
+        total_tracked = len(tracks)
+        cross_matches = person_reid.get_reid_stats().get('cross_camera_tracks', 0) if person_reid else 0
+        
         return jsonify({
             'success': True,
-            'tracks': stats.get('recent_tracks', []),
-            'total_tracked': stats.get('total_persons', 0),
-            'cross_camera_matches': stats.get('cross_camera_matches', 0)
+            'tracks': tracks[:20],
+            'total_tracked': total_tracked,
+            'cross_camera_matches': cross_matches
         })
         
     except Exception as e:
@@ -1447,12 +1582,12 @@ def get_person_reid_stats():
         if person_reid is None:
             return jsonify({
                 'success': True,
-                'total_persons': 3,
-                'active_tracks': 2,
-                'cross_camera_matches': 1,
-                'gallery_size': 3,
-                'match_rate': 0.85,
-                'avg_confidence': 0.85
+                'total_persons': 0,
+                'active_tracks': 0,
+                'cross_camera_matches': 0,
+                'gallery_size': 0,
+                'match_rate': 0.0,
+                'avg_confidence': 0.0
             })
         
         stats = person_reid.get_reid_stats()
@@ -1466,39 +1601,57 @@ def get_person_reid_stats():
 
 @main.route('/api/person_reid/search', methods=['POST'])
 def search_person_by_id():
-    """Search for a person by ID."""
-    global person_reid
+    """Search for a person by name or ID across both facial recognition and Re-ID."""
+    global person_reid, facial_recognition
     
     try:
         data = request.get_json() or {}
-        person_id = data.get('person_id', '')
+        query = data.get('person_id', '').strip()
         
-        if not person_id:
-            return jsonify({'success': False, 'error': 'Person ID required'}), 400
+        if not query:
+            return jsonify({'success': False, 'error': 'Search query required'}), 400
         
-        if person_reid is None:
-            # Return demo result
-            return jsonify({
-                'success': True,
-                'person': {
-                    'person_id': person_id,
-                    'first_seen': (datetime.now() - timedelta(hours=1)).isoformat(),
-                    'last_seen': datetime.now().isoformat(),
-                    'cameras': ['Camera 0'],
-                    'total_sightings': 3,
-                    'history': [
-                        {'time': (datetime.now() - timedelta(minutes=30)).isoformat(), 'camera': 'Camera 0'},
-                        {'time': (datetime.now() - timedelta(minutes=15)).isoformat(), 'camera': 'Camera 0'},
-                        {'time': datetime.now().isoformat(), 'camera': 'Camera 0'}
-                    ]
-                }
-            })
+        # 1. Search facial recognition known persons first (name-based)
+        if facial_recognition:
+            known = facial_recognition.get_known_persons()
+            for name in known:
+                if query.lower() in name.lower():
+                    # Found in facial recognition database
+                    meta = facial_recognition.known_face_metadata.get(name, {})
+                    return jsonify({'success': True, 'person': {
+                        'person_id': name,
+                        'first_seen': meta.get('added_date', ''),
+                        'last_seen': datetime.now().isoformat(),
+                        'cameras': ['camera_0'],
+                        'total_sightings': sum(1 for n in facial_recognition.known_face_names if n == name)
+                    }})
+            
+            # Also search captured faces gallery
+            for cap in facial_recognition.get_captured_faces():
+                if query.lower() in (cap.get('label') or '').lower():
+                    return jsonify({'success': True, 'person': {
+                        'person_id': cap['label'],
+                        'first_seen': cap.get('first_seen', ''),
+                        'last_seen': cap.get('last_seen', ''),
+                        'cameras': ['camera_0'],
+                        'total_sightings': cap.get('detection_count', 1)
+                    }})
         
-        history = person_reid.get_person_history(person_id)
-        return jsonify({
-            'success': True,
-            'person': history
-        })
+        # 2. Search Person Re-ID gallery by ID
+        if person_reid:
+            for pid, pdata in person_reid.person_gallery.items():
+                if query.lower() in pid.lower():
+                    first_seen = pdata.get('first_seen')
+                    last_seen = pdata.get('last_seen')
+                    return jsonify({'success': True, 'person': {
+                        'person_id': pid,
+                        'first_seen': first_seen.isoformat() if hasattr(first_seen, 'isoformat') else str(first_seen or ''),
+                        'last_seen': last_seen.isoformat() if hasattr(last_seen, 'isoformat') else str(last_seen or ''),
+                        'cameras': list(pdata.get('cameras_seen', set())),
+                        'total_sightings': pdata.get('total_detections', 0)
+                    }})
+        
+        return jsonify({'success': False, 'error': 'Person not found'})
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

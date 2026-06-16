@@ -47,7 +47,7 @@ from alert_system.notifier import AlertSystem
 
 # Import advanced features
 try:
-    from advanced_features.facial_recognition import FacialRecognitionSystem
+    from advanced_features.facial_recognition import FacialRecognitionSystem, get_facial_recognition_system
     from advanced_features.behavior_analysis import BehaviorAnalyzer
     from advanced_features.person_reid import PersonReID
     from advanced_features.multi_camera_sync import MultiCameraManager
@@ -440,7 +440,7 @@ def initialize_advanced_features():
     try:
         # Facial recognition
         logger.info("Initializing facial recognition...")
-        facial_recognition = FacialRecognitionSystem()
+        facial_recognition = get_facial_recognition_system()
         
         # Behavior analysis
         logger.info("Initializing behavior analysis...")
@@ -552,6 +552,12 @@ def process_frame_with_all_features(frame, frame_count=0):
             try:
                 face_detections = system_components['facial_recognition'].detect_faces(frame)
                 results['face_detections'] = face_detections
+
+                # Automatically capture unique face snapshots for the gallery
+                try:
+                    system_components['facial_recognition'].capture_unique_faces(frame, face_detections)
+                except Exception as cap_err:
+                    logger.debug(f"Face capture error: {cap_err}")
                 
                 # Update live stats
                 update_shared_stats('live_stats.faces_detected', len(face_detections))

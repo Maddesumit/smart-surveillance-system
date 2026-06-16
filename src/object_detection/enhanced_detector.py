@@ -27,9 +27,14 @@ class EnhancedObjectDetector:
     
     def __init__(self, 
                  model_path: str = 'yolov8s.pt',
-                 confidence_threshold: float = 0.25,
+                 confidence_threshold: float = 0.4,
                  iou_threshold: float = 0.45,
-                 surveillance_mode: bool = True):
+                 surveillance_mode: bool = True,
+                 imgsz: int = 960,
+                 preprocess: bool = False,
+                 augment: bool = False,
+                 device: str = 'auto',
+                 allowed_classes: Optional[List[str]] = None):
         """
         Initialize the Enhanced Object Detector.
         
@@ -38,11 +43,36 @@ class EnhancedObjectDetector:
             confidence_threshold: Minimum confidence score for detections
             iou_threshold: IoU threshold for Non-Maximum Suppression
             surveillance_mode: Enable surveillance-specific optimizations
+            imgsz: Inference image size. Larger improves small/distant object
+                   detection at the cost of speed (e.g. 640, 960, 1280).
+            preprocess: Apply CLAHE/denoise before inference. Off by default
+                   because it shifts the image away from YOLO's training
+                   distribution and usually hurts accuracy.
+            augment: Enable test-time augmentation. Improves accuracy slightly
+                   but is 2-3x slower.
+            device: Inference device. 'auto' selects CUDA (NVIDIA) > MPS
+                   (Apple GPU) > CPU. Can be forced to 'cuda', 'mps' or 'cpu'.
+            allowed_classes: If set, only these class names are detected. This
+                   stops the model from reporting irrelevant COCO classes
+                   (remote, book, toothbrush, etc.) that cause noisy/wrong
+                   labels. None = detect all 80 COCO classes.
         """
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.iou_threshold = iou_threshold
         self.surveillance_mode = surveillance_mode
+        self.device = self._resolve_device(device)
+        # On CPU, a 960px input is slow; drop to 640 for smoother throughput
+        # unless the caller explicitly asked for a non-default size.
+        if self.device == 'cpu' and imgsz > 640:
+            logger.info(f"Running on CPU; reducing imgsz {imgsz} -> 640 for speed")
+            imgsz = 640
+        self.imgsz = imgsz
+        self.preprocess = preprocess
+        self.augment = augment
+        self.allowed_classes = set(allowed_classes) if allowed_classes else None
+        # Resolved to class IDs after the model (and its names) are loaded.
+        self.class_filter_ids = None
         
         # Surveillance-specific classes (high priority for detection)
         self.surveillance_classes = {
@@ -64,7 +94,23 @@ class EnhancedObjectDetector:
         }
         
         logger.info(f"Enhanced detector initialized with model: {model_path}")
-        logger.info(f"Surveillance mode: {surveillance_mode}")
+        logger.info(f"Surveillance mode: {surveillance_mode} | device: {self.device} | imgsz: {self.imgsz}")
+    
+    @staticmethod
+    def _resolve_device(device: str) -> str:
+        """Resolve the best available inference device."""
+        if device and device != 'auto':
+            return device
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return 'cuda'
+            # Apple Silicon GPU
+            if getattr(torch.backends, 'mps', None) is not None and torch.backends.mps.is_available():
+                return 'mps'
+        except Exception as e:
+            logger.warning(f"Device detection failed, defaulting to CPU: {e}")
+        return 'cpu'
     
     def _load_model(self) -> YOLO:
         """Load YOLO model with error handling and validation."""
@@ -86,6 +132,24 @@ class EnhancedObjectDetector:
             if model is None:
                 raise ValueError("Failed to load model")
             
+            # Move model to the resolved device (CUDA/MPS/CPU)
+            try:
+                model.to(self.device)
+                logger.info(f"Model moved to device: {self.device}")
+            except Exception as e:
+                logger.warning(f"Could not move model to {self.device}, using default: {e}")
+                self.device = 'cpu'
+            
+            # Resolve allowed class names -> COCO class IDs for filtering
+            if self.allowed_classes and hasattr(model, 'names'):
+                name_to_id = {name: idx for idx, name in model.names.items()}
+                ids = [name_to_id[n] for n in self.allowed_classes if n in name_to_id]
+                self.class_filter_ids = sorted(ids) if ids else None
+                missing = [n for n in self.allowed_classes if n not in name_to_id]
+                if missing:
+                    logger.warning(f"Allowed classes not in model: {missing}")
+                logger.info(f"Class filter active: {sorted(self.allowed_classes)} -> ids {self.class_filter_ids}")
+            
             # Set model parameters for better surveillance performance
             if self.surveillance_mode:
                 # Configure model for surveillance scenarios
@@ -94,7 +158,7 @@ class EnhancedObjectDetector:
                     'iou': self.iou_threshold,
                     'agnostic_nms': False,  # Class-aware NMS
                     'max_det': 300,  # Allow more detections for crowded scenes
-                    'augment': True,  # Test time augmentation
+                    'augment': self.augment,  # Test time augmentation (off by default)
                 })
             
             logger.info(f"Model loaded successfully: {type(model).__name__}")
@@ -130,15 +194,18 @@ class EnhancedObjectDetector:
             return []
         
         try:
-            # Preprocess frame for better detection
-            processed_frame = self._preprocess_frame(frame)
+            # Preprocess frame only if explicitly enabled (off by default)
+            processed_frame = self._preprocess_frame(frame) if self.preprocess else frame
             
             # Run detection with surveillance optimizations
             results = self.model(
                 processed_frame,
                 conf=self.confidence_threshold,
                 iou=self.iou_threshold,
-                augment=self.surveillance_mode,  # Test time augmentation
+                imgsz=self.imgsz,
+                augment=self.augment,
+                device=self.device,
+                classes=self.class_filter_ids,
                 verbose=False
             )
             
@@ -243,6 +310,8 @@ class EnhancedObjectDetector:
             'size_normalized': (obj_width, obj_height),
             'area_normalized': obj_area,
             'spatial_zone': zone,
+            'frame_width': frame_width,
+            'frame_height': frame_height,
             'is_small_object': obj_area < 0.01,  # Less than 1% of frame
             'is_large_object': obj_area > 0.25,  # More than 25% of frame
         }
@@ -281,11 +350,6 @@ class EnhancedObjectDetector:
         filtered_detections = []
         
         for detection in detections:
-            # Boost confidence for surveillance-relevant objects
-            if detection['is_surveillance_object']:
-                # Slightly boost confidence for important objects
-                detection['confidence'] = min(detection['confidence'] * 1.1, 1.0)
-            
             # Filter out very small objects that might be noise (unless they're important)
             if detection.get('is_small_object', False):
                 if not detection['is_surveillance_object']:
@@ -296,11 +360,16 @@ class EnhancedObjectDetector:
             # Filter out detections at frame edges (often partial/false detections)
             bbox = detection['bbox']
             frame_margin = 5  # pixels
-            if (bbox[0] <= frame_margin or bbox[1] <= frame_margin or 
-                bbox[2] >= detection.get('frame_width', 1000) - frame_margin or
-                bbox[3] >= detection.get('frame_height', 1000) - frame_margin):
-                if detection['confidence'] < 0.6:  # Higher threshold for edge detections
-                    continue
+            frame_width = detection.get('frame_width', 0)
+            frame_height = detection.get('frame_height', 0)
+            at_edge = (
+                bbox[0] <= frame_margin or bbox[1] <= frame_margin or
+                (frame_width and bbox[2] >= frame_width - frame_margin) or
+                (frame_height and bbox[3] >= frame_height - frame_margin)
+            )
+            if at_edge and detection['confidence'] < 0.6:
+                # Higher confidence required to keep edge detections
+                continue
             
             filtered_detections.append(detection)
         

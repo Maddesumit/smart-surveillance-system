@@ -236,9 +236,11 @@
         .stat-item {
             text-align: center;
             padding: 20px;
-            background: white;
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
             border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
         }
 
         .stat-number {
@@ -248,7 +250,7 @@
         }
 
         .stat-label {
-            color: #666;
+            color: var(--text-secondary);
             font-size: 0.9rem;
         }
 
@@ -276,8 +278,10 @@
         }
 
         .navbar {
-            background: white;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             margin-bottom: 20px;
         }
 
@@ -451,8 +455,15 @@
         }
 
         .alert-high {
-            background: linear-gradient(90deg, rgba(220, 53, 69, 0.15) 0%, rgba(255, 255, 255, 1) 30%) !important;
+            background: rgba(220, 53, 69, 0.28) !important;
             border-left: 4px solid #dc3545 !important;
+            color: var(--text-primary) !important;
+        }
+
+        .alert-high h6,
+        .alert-high strong,
+        .alert-high .h6 {
+            color: #ffffff !important;
         }
 
         .chart-container {
@@ -829,6 +840,25 @@
                         <h5><i class="fas fa-history me-2"></i>Known Persons Database</h5>
                         <div id="known-persons-list" class="list-group">
                             <div class="text-center text-muted py-3">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-12">
+                    <div class="status-card">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="mb-0"><i class="fas fa-images me-2"></i>Captured Faces Gallery</h5>
+                            <button class="btn btn-outline-professional btn-sm" onclick="loadCapturedFaces()">
+                                <i class="fas fa-sync me-1"></i>Refresh
+                            </button>
+                        </div>
+                        <small class="text-muted d-block mb-3">
+                            Unique faces are captured automatically from the live feed. Assign a name to an
+                            unknown face to enroll them for recognition.
+                        </small>
+                        <div id="captured-faces-gallery" class="row g-3">
+                            <div class="col-12 text-center text-muted py-3">Loading...</div>
                         </div>
                     </div>
                 </div>
@@ -1743,6 +1773,22 @@
                 }
             }
 
+            // Also update the "Live Alerts" panel on the monitoring page in
+            // real-time so displayed alerts match the alarm sound instead of
+            // waiting for the 5s poll (fixes "sound plays but no alert shown").
+            if (!window._videoAlerts) {
+                window._videoAlerts = [];
+            }
+            if (!window._videoAlerts.some(a => a.id === alert.id)) {
+                window._videoAlerts.unshift(alert);
+                window._videoAlerts = window._videoAlerts.slice(0, 100);
+            }
+            const _activeTab = document.querySelector('.alert-filter-btn.active');
+            const _currentFilter = _activeTab ? _activeTab.getAttribute('data-alert-tab') : 'all';
+            if (typeof renderVideoAlerts === 'function') {
+                renderVideoAlerts(window._videoAlerts, _currentFilter);
+            }
+
             // Refresh alert history if on alerts page
             if (currentSection === 'alerts') {
                 setTimeout(loadDetailedAlerts, 1000);
@@ -1930,6 +1976,120 @@
                 .catch(error => {
                     console.error('Error loading facial recognition data:', error);
                 });
+
+            // Load captured faces gallery
+            loadCapturedFaces();
+        }
+
+        // Captured faces gallery
+        function loadCapturedFaces() {
+            const gallery = document.getElementById('captured-faces-gallery');
+            fetch('/api/facial_recognition/captured_faces')
+                .then(response => response.json())
+                .then(data => {
+                    renderCapturedFaces(data.captured_faces || []);
+                })
+                .catch(error => {
+                    console.error('Error loading captured faces:', error);
+                    if (gallery) {
+                        gallery.innerHTML = '<div class="col-12 text-center text-danger py-3">Error loading captured faces</div>';
+                    }
+                });
+        }
+
+        function renderCapturedFaces(faces) {
+            const gallery = document.getElementById('captured-faces-gallery');
+            if (!gallery) return;
+
+            if (!faces.length) {
+                gallery.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-camera me-2"></i>No faces captured yet. Start monitoring to capture faces.</div>';
+                return;
+            }
+
+            gallery.innerHTML = faces.map(face => {
+                const knownBadge = face.is_known
+                    ? `<span class="badge bg-success">${escapeHtml(face.label)}</span>`
+                    : `<span class="badge bg-warning text-dark">Unknown</span>`;
+                const imgUrl = `/api/facial_recognition/captured_faces/image/${encodeURIComponent(face.image)}`;
+                const seen = face.last_seen ? new Date(face.last_seen).toLocaleString() : '';
+                return `
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="card h-100 shadow-sm" style="background: var(--card-bg); border: 1px solid var(--glass-border); backdrop-filter: blur(10px);">
+                        <img src="${imgUrl}" class="card-img-top" alt="captured face"
+                             style="height: 160px; object-fit: cover; border-bottom: 1px solid var(--glass-border);">
+                        <div class="card-body p-2" style="background: transparent;">
+                            <div class="mb-1">${knownBadge}
+                                <span class="badge bg-secondary">${face.detection_count}x</span>
+                            </div>
+                            <small class="text-muted d-block mb-2" style="font-size: 0.7rem;">${seen}</small>
+                            <div class="input-group input-group-sm mb-1">
+                                <input type="text" class="form-control" placeholder="Name"
+                                       id="capname-${face.id}" value="${face.is_known ? escapeHtml(face.label) : ''}"
+                                       style="background: var(--glass-bg); border-color: var(--glass-border); color: var(--text-primary);">
+                                <button class="btn btn-success" onclick="saveCapturedFaceName(${face.id})" title="Save name & enroll">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </div>
+                            <button class="btn btn-outline-danger btn-sm w-100" onclick="deleteCapturedFace(${face.id})">
+                                <i class="fas fa-trash me-1"></i>Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : text;
+            return div.innerHTML;
+        }
+
+        function saveCapturedFaceName(faceId) {
+            const input = document.getElementById(`capname-${faceId}`);
+            const name = (input ? input.value : '').trim();
+            if (!name) {
+                alert('Please enter a name for this face');
+                return;
+            }
+            fetch('/api/facial_recognition/captured_faces/label', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: faceId, name: name })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message || 'Name saved and enrolled!');
+                        loadFacialRecognitionData();
+                    } else {
+                        alert('Error: ' + (data.error || 'Could not save name'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving name:', error);
+                    alert('Error saving name: ' + error.message);
+                });
+        }
+
+        function deleteCapturedFace(faceId) {
+            if (!confirm('Delete this captured face snapshot?')) return;
+            fetch('/api/facial_recognition/captured_faces/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: faceId })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        loadCapturedFaces();
+                    } else {
+                        alert('Error: ' + (data.error || 'Could not delete'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting captured face:', error);
+                });
         }
 
         function updateKnownPersonsList(persons) {
@@ -1958,20 +2118,21 @@
             const modalHtml = `
                 <div class="modal fade" id="enrollFaceModal" tabindex="-1">
                     <div class="modal-dialog modal-lg">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">Enroll New Face</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <div class="modal-content" style="background: #1a1a2e; border: 1px solid var(--glass-border); color: var(--text-primary);">
+                            <div class="modal-header" style="border-bottom-color: var(--glass-border);">
+                                <h5 class="modal-title" style="color: var(--text-primary);">Enroll New Face</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
                                 <div class="mb-3">
-                                    <label for="personName" class="form-label">Person Name</label>
-                                    <input type="text" class="form-control" id="personName" placeholder="Enter person name">
+                                    <label for="personName" class="form-label" style="color: var(--text-primary);">Person Name</label>
+                                    <input type="text" class="form-control" id="personName" placeholder="Enter person name"
+                                           style="background: var(--glass-bg); border-color: var(--glass-border); color: var(--text-primary);">
                                 </div>
                                 
                                 <!-- Method Selection -->
                                 <div class="mb-3">
-                                    <label class="form-label">Capture Method</label>
+                                    <label class="form-label" style="color: var(--text-primary);">Capture Method</label>
                                     <div class="btn-group w-100" role="group">
                                         <input type="radio" class="btn-check" name="captureMethod" id="uploadMethod" value="upload" checked>
                                         <label class="btn btn-outline-primary" for="uploadMethod">
@@ -1987,8 +2148,9 @@
                                 
                                 <!-- Upload Section -->
                                 <div id="uploadSection" class="mb-3">
-                                    <label for="faceImage" class="form-label">Upload Face Image</label>
-                                    <input type="file" class="form-control" id="faceImage" accept="image/*">
+                                    <label for="faceImage" class="form-label" style="color: var(--text-primary);">Upload Face Image</label>
+                                    <input type="file" class="form-control" id="faceImage" accept="image/*"
+                                           style="background: var(--glass-bg); border-color: var(--glass-border); color: var(--text-primary);">
                                 </div>
                                 
                                 <!-- Camera Section -->
@@ -2025,11 +2187,11 @@
                                     <canvas id="imagePreview" width="300" height="300" style="border: 1px solid #ddd; display: none; margin: 0 auto; display: block;"></canvas>
                                 </div>
                                 
-                                <div class="alert alert-info">
+                                <div class="alert alert-info" style="background: rgba(13,202,240,0.1); border-color: rgba(13,202,240,0.3); color: var(--text-secondary);">
                                     <small>Please ensure the face is clearly visible, well-lit, and facing forward for best recognition results.</small>
                                 </div>
                             </div>
-                            <div class="modal-footer">
+                            <div class="modal-footer" style="border-top-color: var(--glass-border);">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                                 <button type="button" class="btn btn-professional" onclick="submitEnrollment()">Enroll Person</button>
                             </div>
@@ -2469,17 +2631,17 @@
             }
 
             const tracksHtml = tracks.slice(0, 10).map(track => `
-                <div class="reid-track-card mb-2 p-3" style="background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); border-radius: 10px; border-left: 3px solid #3498db;">
+                <div class="reid-track-card mb-2 p-3" style="background: var(--glass-bg); border-radius: 10px; border-left: 3px solid #3498db; border: 1px solid var(--glass-border);">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <strong class="text-primary"><i class="fas fa-user-circle me-2"></i>Person ${track.person_id}</strong>
+                            <strong style="color: #4facfe;"><i class="fas fa-user-circle me-2"></i>Person ${track.person_id}</strong>
                             <span class="badge ${track.confidence >= 0.8 ? 'bg-success' : 'bg-warning'} ms-2">${Math.round((track.confidence || 0.8) * 100)}% match</span>
                         </div>
-                        <small class="text-muted">${track.total_sightings || 1} sightings</small>
+                        <small style="color: var(--text-secondary);">${track.total_sightings || 1} sightings</small>
                     </div>
                     <div class="mt-2">
-                        <small class="text-muted d-block"><i class="fas fa-camera me-1"></i>Cameras: ${(track.cameras || []).join(', ')}</small>
-                        <small class="text-muted d-block"><i class="fas fa-clock me-1"></i>Last seen: ${new Date(track.last_seen).toLocaleString()}</small>
+                        <small style="color: var(--text-secondary);" class="d-block"><i class="fas fa-camera me-1"></i>Cameras: ${(track.cameras || []).join(', ') || 'N/A'}</small>
+                        <small style="color: var(--text-secondary);" class="d-block"><i class="fas fa-clock me-1"></i>Last seen: ${track.last_seen ? new Date(track.last_seen).toLocaleString() : 'N/A'}</small>
                     </div>
                 </div>
             `).join('');
@@ -2507,17 +2669,21 @@
                 .then(data => {
                     if (data.success && data.person) {
                         const p = data.person;
+                        const firstSeen = p.first_seen ? new Date(p.first_seen).toLocaleString() : 'N/A';
+                        const lastSeen = p.last_seen ? new Date(p.last_seen).toLocaleString() : 'N/A';
+                        const cameras = (p.cameras || []).join(', ') || 'N/A';
+                        const sightings = p.total_sightings || 0;
                         resultsContainer.innerHTML = `
-                        <div class="person-result p-3" style="background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%); border-radius: 10px;">
-                            <h6 class="text-primary"><i class="fas fa-user-check me-2"></i>Person ${p.person_id}</h6>
-                            <p class="mb-1"><small><i class="fas fa-sign-in-alt me-1"></i>First seen: ${new Date(p.first_seen).toLocaleString()}</small></p>
-                            <p class="mb-1"><small><i class="fas fa-sign-out-alt me-1"></i>Last seen: ${new Date(p.last_seen).toLocaleString()}</small></p>
-                            <p class="mb-1"><small><i class="fas fa-camera me-1"></i>Cameras: ${(p.cameras || []).join(', ')}</small></p>
-                            <p class="mb-0"><small><i class="fas fa-eye me-1"></i>Total sightings: ${p.total_sightings}</small></p>
+                        <div class="person-result p-3" style="background: var(--glass-bg); border-radius: 10px; border: 1px solid var(--glass-border);">
+                            <h6 style="color: #4facfe;"><i class="fas fa-user-check me-2"></i>Person ${p.person_id}</h6>
+                            <p class="mb-1"><small style="color: var(--text-secondary);"><i class="fas fa-sign-in-alt me-1"></i>First seen: ${firstSeen}</small></p>
+                            <p class="mb-1"><small style="color: var(--text-secondary);"><i class="fas fa-sign-out-alt me-1"></i>Last seen: ${lastSeen}</small></p>
+                            <p class="mb-1"><small style="color: var(--text-secondary);"><i class="fas fa-camera me-1"></i>Cameras: ${cameras}</small></p>
+                            <p class="mb-0"><small style="color: var(--text-secondary);"><i class="fas fa-eye me-1"></i>Total sightings: ${sightings}</small></p>
                         </div>
                     `;
                     } else {
-                        resultsContainer.innerHTML = '<div class="text-muted text-center py-3"><i class="fas fa-user-times me-2"></i>Person not found</div>';
+                        resultsContainer.innerHTML = '<div class="text-center py-3" style="color: var(--text-secondary);"><i class="fas fa-user-times me-2"></i>Person not found</div>';
                     }
                 })
                 .catch(error => {
@@ -2527,8 +2693,30 @@
         }
 
         function viewPersonGallery() {
-            loadPersonReidData();
-            alert('Person gallery loaded. See the Recent Person Tracks section.');
+            const container = document.getElementById('person-tracks-list');
+            if (container) {
+                container.innerHTML = '<div class="text-center py-3" style="color: var(--text-secondary);"><i class="fas fa-spinner fa-spin me-2"></i>Loading gallery...</div>';
+            }
+
+            fetch('/api/person_reid/tracks')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.tracks && data.tracks.length > 0) {
+                        updatePersonReidDisplay(data.tracks);
+                        document.getElementById('tracked-persons').textContent = data.total_tracked || data.tracks.length;
+                        document.getElementById('cross-camera-matches').textContent = data.cross_camera_matches || 0;
+                    } else {
+                        if (container) {
+                            container.innerHTML = '<div class="text-center py-3" style="color: var(--text-secondary);"><i class="fas fa-user-slash me-2"></i>No persons in gallery yet. Persons will appear here once detected by the live feed.</div>';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading gallery:', error);
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-3 text-danger"><i class="fas fa-exclamation-circle me-2"></i>Error loading gallery</div>';
+                    }
+                });
         }
 
         // Analytics Functions
@@ -2576,10 +2764,10 @@
             const levelColors = { 'Low': 'success', 'Medium': 'warning', 'High': 'danger' };
 
             const html = summary.map(item => `
-                <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background: #f8f9fa; border-radius: 8px;">
-                    <span><i class="fas fa-clock me-2"></i>${item.time}</span>
+                <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background: var(--glass-bg); border-radius: 8px; border: 1px solid var(--glass-border);">
+                    <span style="color: var(--text-primary);"><i class="fas fa-clock me-2"></i>${item.time}</span>
                     <span class="badge bg-${levelColors[item.level] || 'secondary'}">${item.level}</span>
-                    <span class="text-muted">${item.events} events</span>
+                    <span style="color: var(--text-secondary);">${item.events} events</span>
                 </div>
             `).join('');
 
@@ -2829,16 +3017,16 @@
             const modalHtml = `
                 <div class="modal fade" id="manageFaceModal" tabindex="-1">
                     <div class="modal-dialog modal-lg">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">Manage Face Database</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <div class="modal-content" style="background: #1a1a2e; border: 1px solid var(--glass-border); color: var(--text-primary);">
+                            <div class="modal-header" style="border-bottom-color: var(--glass-border);">
+                                <h5 class="modal-title" style="color: var(--text-primary);">Manage Face Database</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
                                 <div class="row">
                                     <div class="col-md-6">
-                                        <h6>Database Statistics</h6>
-                                        <div class="card">
+                                        <h6 style="color: var(--text-primary);">Database Statistics</h6>
+                                        <div class="card" style="background: var(--glass-bg); border-color: var(--glass-border);">
                                             <div class="card-body">
                                                 <div class="row text-center">
                                                     <div class="col-6">
@@ -2854,7 +3042,7 @@
                                         </div>
                                     </div>
                                     <div class="col-md-6">
-                                        <h6>Quick Actions</h6>
+                                        <h6 style="color: var(--text-primary);">Quick Actions</h6>
                                         <div class="d-grid gap-2">
                                             <button class="btn btn-outline-professional btn-sm" onclick="exportFaceDatabase()">
                                                 <i class="fas fa-download me-1"></i>Export Database
@@ -2868,13 +3056,18 @@
                                         </div>
                                     </div>
                                 </div>
-                                <hr>
-                                <h6>Enrolled Persons</h6>
-                                <div id="modal-known-persons-list" class="list-group" style="max-height: 300px; overflow-y: auto;">
-                                    <div class="text-center text-muted py-3">Loading...</div>
+                                <hr style="border-color: var(--glass-border);">
+                                <h6 style="color: var(--text-primary);">Enrolled Persons</h6>
+                                <div id="modal-known-persons-list" class="list-group" style="max-height: 200px; overflow-y: auto;">
+                                    <div class="text-center py-3" style="color: var(--text-secondary);">Loading...</div>
+                                </div>
+                                <hr style="border-color: var(--glass-border);">
+                                <h6 style="color: var(--text-primary);">Captured Faces</h6>
+                                <div id="modal-captured-faces" class="row g-2" style="max-height: 250px; overflow-y: auto;">
+                                    <div class="col-12 text-center py-3" style="color: var(--text-secondary);">Loading...</div>
                                 </div>
                             </div>
-                            <div class="modal-footer">
+                            <div class="modal-footer" style="border-top-color: var(--glass-border);">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                                 <button type="button" class="btn btn-professional" onclick="enrollNewFace(); bootstrap.Modal.getInstance(document.getElementById('manageFaceModal')).hide();">
                                     <i class="fas fa-user-plus me-1"></i>Enroll New Person
@@ -2907,12 +3100,41 @@
                 .then(data => {
                     const persons = data.known_persons || [];
                     document.getElementById('modal-known-faces').textContent = persons.length;
-                    document.getElementById('modal-total-encodings').textContent = persons.length; // Simplified
-
+                    document.getElementById('modal-total-encodings').textContent = persons.length;
                     updateModalKnownPersonsList(persons);
                 })
                 .catch(error => {
                     console.error('Error loading modal face data:', error);
+                });
+
+            // Load captured faces for the modal
+            fetch('/api/facial_recognition/captured_faces')
+                .then(response => response.json())
+                .then(data => {
+                    const faces = data.captured_faces || [];
+                    const container = document.getElementById('modal-captured-faces');
+                    if (!container) return;
+                    if (faces.length === 0) {
+                        container.innerHTML = '<div class="col-12 text-center py-3" style="color: var(--text-secondary);">No faces captured yet</div>';
+                        return;
+                    }
+                    container.innerHTML = faces.map(face => {
+                        const imgUrl = `/api/facial_recognition/captured_faces/image/${encodeURIComponent(face.image)}`;
+                        const badge = face.is_known
+                            ? `<span class="badge bg-success">${escapeHtml(face.label)}</span>`
+                            : `<span class="badge bg-warning text-dark">Unknown</span>`;
+                        return `
+                        <div class="col-4 col-md-3">
+                            <div class="text-center p-1" style="background: var(--glass-bg); border-radius: 8px; border: 1px solid var(--glass-border);">
+                                <img src="${imgUrl}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 6px;" alt="face">
+                                <div class="mt-1">${badge}</div>
+                                <small style="color: var(--text-secondary); font-size: 0.65rem;">${face.detection_count}x seen</small>
+                            </div>
+                        </div>`;
+                    }).join('');
+                })
+                .catch(error => {
+                    console.error('Error loading captured faces:', error);
                 });
         }
 
@@ -2921,14 +3143,14 @@
             if (!container) return;
 
             if (persons.length === 0) {
-                container.innerHTML = '<div class="text-muted text-center py-3">No persons enrolled</div>';
+                container.innerHTML = '<div class="text-center py-3" style="color: var(--text-secondary);">No persons enrolled</div>';
                 return;
             }
 
             const personsHtml = persons.map(person => `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div class="list-group-item d-flex justify-content-between align-items-center" style="background: var(--glass-bg); border-color: var(--glass-border); color: var(--text-primary);">
                     <div>
-                        <i class="fas fa-user me-2"></i>
+                        <i class="fas fa-user me-2" style="color: #4facfe;"></i>
                         <strong>${person}</strong>
                     </div>
                     <div>

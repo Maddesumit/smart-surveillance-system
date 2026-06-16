@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 # Import advanced features
 try:
-    from advanced_features.facial_recognition import FacialRecognitionSystem
+    from advanced_features.facial_recognition import FacialRecognitionSystem, get_facial_recognition_system
     from advanced_features.behavior_analysis import BehaviorAnalyzer
     from advanced_features.person_reid import PersonReID
     from advanced_features.multi_camera_sync import MultiCameraManager
@@ -51,7 +51,7 @@ def initialize_advanced_features():
     
     try:
         if facial_recognition is None:
-            facial_recognition = FacialRecognitionSystem()
+            facial_recognition = get_facial_recognition_system()
         if behavior_analyzer is None:
             behavior_analyzer = BehaviorAnalyzer()
         if person_reid is None:
@@ -101,6 +101,22 @@ def get_dashboard_data():
         if hasattr(current_app, 'get_shared_stats'):
             stats = current_app.get_shared_stats()
         
+        # Merge live daily counters from the dashboard video pipeline
+        # (main_routes.generate_frames), which is the detector actually running
+        # for the browser feed. Without this the stats stay at zero.
+        objects_today = stats.get('objects_detected_today', 0)
+        faces_today = stats.get('faces_recognized_today', 0)
+        alerts_today = stats.get('alerts_generated_today', 0)
+        try:
+            from dashboard.routes import main_routes as _mr
+            ds = getattr(_mr, 'daily_stats', None)
+            if ds:
+                objects_today = max(objects_today, ds.get('objects_detected_today', 0))
+                faces_today = max(faces_today, ds.get('faces_recognized_today', 0))
+                alerts_today = max(alerts_today, ds.get('alerts_generated_today', 0))
+        except Exception as merge_err:
+            logger.debug(f"Could not merge live daily stats: {merge_err}")
+        
         # Calculate system uptime
         start_time = stats.get('system_start_time', datetime.now())
         uptime = datetime.now() - start_time
@@ -115,10 +131,10 @@ def get_dashboard_data():
                 'uptime': uptime_str
             },
             'detection_stats': {
-                'objects_detected_today': stats.get('objects_detected_today', 0),
-                'faces_recognized_today': stats.get('faces_recognized_today', 0),
+                'objects_detected_today': objects_today,
+                'faces_recognized_today': faces_today,
                 'anomalies_detected_today': 0,  # TODO: Add anomaly counting
-                'alerts_generated_today': stats.get('alerts_generated_today', 0)
+                'alerts_generated_today': alerts_today
             },
             'live_stats': stats.get('live_stats', {
                 'objects_in_view': 0,
@@ -331,6 +347,64 @@ def remove_known_person():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@api.route('/facial_recognition/captured_faces')
+def get_captured_faces():
+    """Return the gallery of automatically captured unique faces."""
+    initialize_advanced_features()
+    if not facial_recognition:
+        return jsonify({'captured_faces': []})
+    try:
+        return jsonify({'captured_faces': facial_recognition.get_captured_faces()})
+    except Exception as e:
+        return jsonify({'captured_faces': [], 'error': str(e)}), 500
+
+@api.route('/facial_recognition/captured_faces/image/<path:filename>')
+def get_captured_face_image(filename):
+    """Serve a captured face snapshot image."""
+    from flask import send_file, abort
+    initialize_advanced_features()
+    if not facial_recognition:
+        abort(404)
+    path = facial_recognition.get_captured_face_path(filename)
+    if not path:
+        abort(404)
+    return send_file(path, mimetype='image/jpeg')
+
+@api.route('/facial_recognition/captured_faces/label', methods=['POST'])
+def label_captured_face():
+    """Assign a name to a captured face and enroll it as a known person."""
+    initialize_advanced_features()
+    if not facial_recognition:
+        return jsonify({'success': False, 'error': 'Facial recognition not available'}), 400
+    try:
+        data = request.get_json() or {}
+        face_id = data.get('id')
+        name = (data.get('name') or '').strip()
+        if face_id is None or not name:
+            return jsonify({'success': False, 'error': 'Face id and name are required'}), 400
+        success = facial_recognition.label_captured_face(int(face_id), name)
+        if success:
+            return jsonify({'success': True, 'message': f'Saved name "{name}" and enrolled for recognition'})
+        return jsonify({'success': False, 'error': 'Could not label/enroll this face'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@api.route('/facial_recognition/captured_faces/delete', methods=['POST', 'DELETE'])
+def delete_captured_face():
+    """Delete a captured face snapshot from the gallery."""
+    initialize_advanced_features()
+    if not facial_recognition:
+        return jsonify({'success': False, 'error': 'Facial recognition not available'}), 400
+    try:
+        data = request.get_json() or {}
+        face_id = data.get('id')
+        if face_id is None:
+            return jsonify({'success': False, 'error': 'Face id is required'}), 400
+        success = facial_recognition.delete_captured_face(int(face_id))
+        return jsonify({'success': success})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @api.route('/facial_recognition/export_database')
 def export_face_database():
     """Export facial recognition database."""
@@ -371,13 +445,13 @@ def export_face_database():
             json.dump(export_data, f, indent=2)
         
         # Copy database files if they exist
-        db_files = ['face_database.db', 'face_encodings.pkl']
+        db_files = [facial_recognition.database_path, facial_recognition.encodings_path]
         for db_file in db_files:
             if os.path.exists(db_file):
                 shutil.copy2(db_file, export_path)
         
         # Copy known faces directory if it exists
-        known_faces_dir = 'known_faces'
+        known_faces_dir = str(facial_recognition.known_faces_dir)
         if os.path.exists(known_faces_dir):
             shutil.copytree(known_faces_dir, os.path.join(export_path, 'known_faces'))
         
@@ -441,22 +515,30 @@ def optimize_face_database():
         # Clean up database
         try:
             import sqlite3
-            conn = sqlite3.connect('face_database.db')
+            conn = sqlite3.connect(facial_recognition.database_path)
             cursor = conn.cursor()
-            
-            # Remove any orphaned records
-            cursor.execute('DELETE FROM person_detections WHERE person_name NOT IN (SELECT name FROM known_persons)')
-            removed_orphaned = cursor.rowcount
-            if removed_orphaned > 0:
-                optimizations_performed.append(f"Removed {removed_orphaned} orphaned detection records")
-            
+
+            # Remove orphaned detection records (persons no longer known/active)
+            try:
+                cursor.execute('''
+                    DELETE FROM face_detections
+                    WHERE is_known = 1 AND person_name NOT IN (
+                        SELECT name FROM known_faces WHERE status = 'active'
+                    )
+                ''')
+                removed_orphaned = cursor.rowcount
+                if removed_orphaned > 0:
+                    optimizations_performed.append(f"Removed {removed_orphaned} orphaned detection records")
+            except Exception:
+                pass
+
             # Vacuum database to reclaim space
             cursor.execute('VACUUM')
             optimizations_performed.append("Database vacuumed and compacted")
-            
+
             conn.commit()
             conn.close()
-            
+
         except Exception as db_error:
             logger.warning(f"Database optimization warning: {str(db_error)}")
         
@@ -516,50 +598,47 @@ def clear_face_database():
         
         # Get count before clearing
         persons_before = len(facial_recognition.get_known_persons())
-        
-        # Clear all known persons
+
+        # Clear all known persons (updates memory, disk images and encodings)
         known_persons = facial_recognition.get_known_persons()
         removed_count = 0
         for person in known_persons:
             if facial_recognition.remove_known_person(person):
                 removed_count += 1
-        
-        # Clean database
+
+        # Reset in-memory known-face state and captured gallery
+        facial_recognition.known_face_encodings = []
+        facial_recognition.known_face_names = []
+        facial_recognition.known_face_metadata = {}
+        facial_recognition.captured_faces = []
+        facial_recognition._save_encodings()
+
+        # Clear database tables (keep schema intact)
         try:
             import sqlite3
-            conn = sqlite3.connect('face_database.db')
+            conn = sqlite3.connect(facial_recognition.database_path)
             cursor = conn.cursor()
-            
-            # Clear all tables
-            cursor.execute('DELETE FROM known_persons')
-            cursor.execute('DELETE FROM person_detections')
-            cursor.execute('DELETE FROM face_encodings')
+            for table in ('known_faces', 'face_detections', 'unknown_faces', 'captured_faces'):
+                try:
+                    cursor.execute(f'DELETE FROM {table}')
+                except Exception:
+                    pass
             cursor.execute('VACUUM')
-            
             conn.commit()
             conn.close()
         except Exception as db_error:
             logger.warning(f"Database clearing warning: {str(db_error)}")
-        
-        # Remove encoding files
-        import os
-        encoding_files = ['face_encodings.pkl', 'face_database.db']
-        for file in encoding_files:
-            if os.path.exists(file):
-                try:
-                    os.remove(file)
-                except:
-                    pass
-        
-        # Clear known faces directory
+
+        # Remove stored snapshot/image directories, then recreate them
         import shutil
-        if os.path.exists('known_faces'):
+        for d in (facial_recognition.known_faces_dir, facial_recognition.captured_faces_dir):
             try:
-                shutil.rmtree('known_faces')
-                os.makedirs('known_faces')
-            except:
+                if os.path.exists(d):
+                    shutil.rmtree(d, ignore_errors=True)
+                os.makedirs(d, exist_ok=True)
+            except Exception:
                 pass
-        
+
         return jsonify({
             'success': True,
             'message': f'Database cleared successfully. Removed {removed_count} persons.',
